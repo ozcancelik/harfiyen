@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_SETTINGS, presetById, type CaptionSettings } from "./captions/style";
 import { ExportMenu } from "./components/ExportMenu";
-import { IconMic, IconMuted, IconOpen, IconPause, IconPlay, IconSound, IconUndo } from "./components/icons";
+import { IconGitHub, IconMic, IconMuted, IconOpen, IconPause, IconPlay, IconSound, IconUndo } from "./components/icons";
 import { RecordButton } from "./components/RecordButton";
 import { Inspector } from "./components/Inspector";
 import { StatusBar } from "./components/StatusBar";
@@ -238,6 +238,15 @@ export function App() {
             onCancelBurn={burner.cancel}
           />
         )}
+        <a
+          className="tb-btn tb-btn--github"
+          href="https://github.com/ozcancelik/harfiyen"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Kaynak kodu GitHub'da"
+        >
+          <IconGitHub /> <span className="tb-btn__label">GitHub</span>
+        </a>
       </header>
 
       <div className="workspace">

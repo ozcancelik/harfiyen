@@ -162,6 +162,10 @@ a {
   box-shadow: 0 2px 6px rgba(71, 109, 230, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
+.tb-btn--github {
+  text-decoration: none;
+}
+
 .tb-btn:disabled {
   opacity: 0.45;
 }
@@ -1046,6 +1050,49 @@ a {
     order: -1;
     height: 56vw;
     min-height: 220px;
+  }
+
+  /* Empty state: let the stage grow to fit the welcome text instead of clipping it. */
+  .viewer:has(.dropzone) {
+    height: auto;
+  }
+
+  .dropzone {
+    gap: 10px;
+    padding: 28px 20px;
+  }
+
+  .dropzone__mark {
+    height: 44px;
+  }
+
+  .dropzone__title {
+    font-size: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .tb-btn--github {
+    padding: 0 8px;
+  }
+
+  .tb-btn--github .tb-btn__label {
+    display: none;
+  }
+
+  .viewer {
+    padding: 10px;
+  }
+
+  .dropzone__actions {
+    flex-direction: column;
+    align-self: stretch;
+    gap: 8px;
+  }
+
+  .dropzone__actions .btn {
+    width: 100%;
+    height: 44px;
   }
 
   .transcript-pane,
