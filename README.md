@@ -27,13 +27,15 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshot.jpg" alt="Harfiyen ekran görünttüsü. Solda transkript, ortada sesle hareket eden aura üzerinde karaoke altyazı, sağda altyazı stilleri" width="900" />
+  <img src="docs/screenshot.jpg" alt="Harfiyen ekran görüntüsü. Solda transkript, ortada sesle hareket eden aura üzerinde karaoke altyazı, sağda altyazı stilleri" width="900" />
 </p>
+
+https://github.com/user-attachments/assets/72944ea4-75aa-4462-b5eb-b98a2f604bfc
 
 ---
 
 Harfiyen, [seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1) Türkçe konuşma tanıma modelini doğrudan
-tarayıcıda, ekran kartı üzerinde (**WebGPU**) çalıştırır. Bir video ya da ses dosyası yüklersii, kelimeler
+tarayıcıda, ekran kartı üzerinde (**WebGPU**) çalıştırır. Bir video ya da ses dosyası yüklersin, kelimeler
 zaman kodlarıyla belirir, istediğin altyazı stilini seçersin ve altyazılı videoyu indirirsin. Mikrofonla
 konuşurken de canlı çalışır.
 
