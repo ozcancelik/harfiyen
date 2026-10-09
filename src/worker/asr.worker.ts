@@ -20,7 +20,8 @@ import { PEAK_STEP, type ErrorCode, type FromWorker, type ProviderChoice, type T
 
 declare const self: DedicatedWorkerGlobalScope;
 
-const MODEL_BASE = `${import.meta.env.BASE_URL}models/seda-v0.1/`;
+const MODELS_BASE = (import.meta.env.VITE_MODELS_BASE_URL || `${import.meta.env.BASE_URL}models`).replace(/\/+$/, "");
+const MODEL_BASE = `${MODELS_BASE}/seda-v0.1/`;
 /** Approximate; the real size is settled once the download finishes. */
 const ORT_WASM_SIZE = 26_800_000;
 const PROGRESS_INTERVAL_MS = 150;
@@ -113,7 +114,7 @@ function getEngine(choice: ProviderChoice = "auto") {
   return enginePromise;
 }
 
-const PUNCT_BASE = `${import.meta.env.BASE_URL}models/punct/`;
+const PUNCT_BASE = `${MODELS_BASE}/punct/`;
 let punctPromise: Promise<Punctuator> | null = null;
 
 /** The punctuation model is loaded on first use (≈60 MB, cached like the rest). */

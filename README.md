@@ -138,6 +138,26 @@ Cross-Origin-Embedder-Policy: require-corp
 Uygulama bir web manifest'i ile gelir; Chrome ve Edge'de adres çubuğundan masaüstü uygulaması olarak
 kurulabilir.
 
+### Cloudflare Pages ve R2
+
+Pages'te build komutu `npm run build`, çıktı klasörü `dist` olmalıdır. `public/_headers` gerekli başlıkları
+derlemeye ekler. Pages'in dosya boyutu sınırı nedeniyle modeller ve büyük ONNX Runtime WASM dosyası R2'de
+barındırılır. Build ortamına şu değişkenleri ekle (adresleri kendi R2 adresinle değiştir):
+
+```text
+VITE_MODELS_BASE_URL=https://YOUR-R2-PUBLIC-HOST/models
+VITE_ORT_WASM_URL=https://YOUR-R2-PUBLIC-HOST/runtime/ort-wasm-simd-threaded.asyncify.wasm
+```
+
+R2'ye `public/models/` içeriğini `models/` altında, kullanılan ONNX Runtime sürümüne ait
+`node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm` dosyasını `runtime/` altında yükle.
+Bucket CORS ayarında uygulamanın `https://PROJE.pages.dev` adresinden `GET` ve `HEAD` isteklerine izin ver;
+`AllowedHeaders` alanını `["*"]` olarak ayarla.
+
+`VITE_ORT_WASM_URL` tanımlandığında büyük WASM dosyası Pages çıktısına eklenmez. Değişkenler tanımlanmazsa
+yerel dosyalar kullanılır. GitHub'dan build alırken modeller zaten repo dışında kalır; yerel `dist/`
+klasörünü elle yayınlıyorsan içindeki `models/` klasörünü Pages'e yükleme.
+
 ## Geliştirme
 
 ```bash
