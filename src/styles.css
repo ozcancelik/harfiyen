@@ -363,7 +363,11 @@ a {
   pointer-events: none;
 }
 
+/* Pinned to the stage: as a grid item, height: 100% would be ignored and a
+   vertical video's canvas would grow to its aspect ratio and get cropped. */
 .stage__canvas {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
@@ -1014,6 +1018,52 @@ a {
   font-size: 12px;
 }
 
+.menu__item--choice {
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 8px;
+  text-align: left;
+}
+
+.menu__check {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  height: 18px;
+}
+
+.menu__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  height: 18px;
+}
+
+/* Where the model runs: GPU in the brand blue, CPU in turquoise. */
+.provider-icon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--text-2);
+}
+
+.provider-icon--webgpu {
+  color: var(--cini);
+}
+
+.provider-icon--wasm {
+  color: var(--firuze);
+}
+
+.menu__item:hover:not(:disabled) .provider-icon {
+  color: inherit;
+}
+
+.menu__choice {
+  display: grid;
+  gap: 2px;
+}
+
 .menu__foot {
   margin: 4px 8px 2px;
   color: var(--text-3);
@@ -1148,6 +1198,7 @@ a {
   }
 
   .tb-btn--open .tb-btn__label,
+  .tb-btn--provider .tb-btn__label,
   .tb-btn--github .tb-btn__label {
     display: none;
   }

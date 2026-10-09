@@ -3,7 +3,8 @@ import type { DecodeOptions, Word } from "../engine";
 export type ProviderChoice = "auto" | "webgpu" | "wasm";
 
 export type ToWorker =
-  | { type: "init"; provider: ProviderChoice }
+  /** Load the model. `reason`: why the page chose the CPU, shown once ready. */
+  | { type: "init"; provider: ProviderChoice; reason?: string }
   | { type: "transcribe"; jobId: number; file: File; options: DecodeOptions }
   | {
       type: "transcribe-pcm";
@@ -20,7 +21,8 @@ export type ToWorker =
   /** Punctuate and true-case plain words (one entry per transcript word). */
   | { type: "punctuate"; id: number; words: string[] };
 
-export type ErrorCode = "decode-unsupported" | "no-audio" | "model" | "runtime";
+/** `gpu`: WebGPU failed; the page restarts the worker on the CPU. */
+export type ErrorCode = "decode-unsupported" | "no-audio" | "model" | "runtime" | "gpu";
 
 export type FromWorker =
   | { type: "download"; loaded: number; total: number; fromCache: boolean }

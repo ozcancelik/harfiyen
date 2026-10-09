@@ -4,6 +4,7 @@ import { ExportMenu } from "./components/ExportMenu";
 import { IconGitHub, IconMic, IconMuted, IconOpen, IconPause, IconPlay, IconSound, IconUndo } from "./components/icons";
 import { RecordButton } from "./components/RecordButton";
 import { Inspector } from "./components/Inspector";
+import { ProviderMenu } from "./components/ProviderMenu";
 import { StatusBar } from "./components/StatusBar";
 import { Timeline } from "./components/Timeline";
 import { Transcript } from "./components/Transcript";
@@ -51,7 +52,7 @@ function baseName(name: string) {
 }
 
 export function App() {
-  const { engine, job, liveWaiting, prepare, start, startLive, stopLive, cancel, setWords, liveLevels, liveMeter, punctuate, punct } =
+  const { engine, job, liveWaiting, provider, setProvider, prepare, start, startLive, stopLive, cancel, setWords, liveLevels, liveMeter, punctuate, punct } =
     useTranscriber();
   const [autoPunct, setAutoPunct] = useState(() => localStorage.getItem("harfiyen.punct") !== "off");
   useEffect(() => localStorage.setItem("harfiyen.punct", autoPunct ? "on" : "off"), [autoPunct]);
@@ -238,6 +239,12 @@ export function App() {
             onCancelBurn={burner.cancel}
           />
         )}
+        <ProviderMenu
+          value={provider}
+          engine={engine}
+          onChange={setProvider}
+          locked={job?.status === "running" || punct.phase === "run" || punct.phase === "download"}
+        />
         <a
           className="tb-btn tb-btn--github"
           href="https://github.com/ozcancelik/harfiyen"

@@ -25,6 +25,7 @@ function EngineItem({ engine }: { engine: EngineState }) {
           <span className={`dot${engine.provider === "webgpu" ? "" : " dot--cpu"}`} aria-hidden />
           {engine.provider === "webgpu" ? "WebGPU" : "İşlemci (WASM)"}
           {engine.gpu && <span className="sb-dim">{engine.gpu}</span>}
+          {engine.provider === "wasm" && engine.fallbackReason && <span className="sb-dim">{engine.fallbackReason}</span>}
         </span>
       );
     case "error":

@@ -38,6 +38,9 @@ class JobError extends Error {
 }
 
 let enginePromise: Promise<Engine> | null = null;
+/** Set by `init`; a worker serves one provider for its whole life. */
+let providerChoice: ProviderChoice = "auto";
+let cpuReason: string | null = null;
 const cancelled = new Set<number>();
 
 async function pickProvider(choice: ProviderChoice): Promise<{ provider: EncoderProvider; gpu: string | null; reason: string | null }> {
@@ -50,6 +53,17 @@ async function pickProvider(choice: ProviderChoice): Promise<{ provider: Encoder
   const info = adapter.info;
   const gpu = [info?.vendor, info?.architecture || info?.description].filter(Boolean).join(" ") || "GPU";
   return { provider: "webgpu", gpu, reason: null };
+}
+
+/**
+ * Threads for the wasm runtime. Fixed once the runtime starts, so a worker
+ * picks it from its provider and switching provider means a new worker.
+ */
+function wasmThreads(provider: EncoderProvider) {
+  // On the GPU only the small models run here; per-call work is too tiny for
+  // extra threads to pay off. On the CPU the encoder needs them.
+  if (provider === "webgpu" || !self.crossOriginIsolated) return 1;
+  return Math.max(1, Math.min(4, Math.ceil((navigator.hardwareConcurrency || 2) / 2)));
 }
 
 async function loadEngine(choice: ProviderChoice): Promise<Engine> {
@@ -67,10 +81,9 @@ async function loadEngine(choice: ProviderChoice): Promise<Engine> {
   const [encoder, decoder, joiner, lm, lodr, tokens, wasm] = files;
 
   post({ type: "compiling" });
+  const pick = await pickProvider(choice);
   ort.env.wasm.wasmBinary = wasm.buffer as ArrayBuffer;
-  // The wasm-side models (decoder, joiner, LM) are tiny per call; extra
-  // threads only add synchronisation cost there.
-  ort.env.wasm.numThreads = 1;
+  ort.env.wasm.numThreads = wasmThreads(pick.provider);
   ort.env.logLevel = "error";
 
   const modelFiles = {
@@ -83,30 +96,28 @@ async function loadEngine(choice: ProviderChoice): Promise<Engine> {
     tokens: new TextDecoder().decode(tokens),
   };
 
-  const pick = await pickProvider(choice);
-  let reason = pick.reason;
   let engine: Engine;
   try {
     engine = await Engine.create(ort, modelFiles, pick.provider);
   } catch (e) {
     if (pick.provider !== "webgpu") throw e;
-    console.warn("WebGPU session failed, falling back to wasm", e);
-    reason = "WebGPU oturumu açılamadı, işlemci (WASM) kullanılıyor.";
-    pick.gpu = null;
-    engine = await Engine.create(ort, modelFiles, "wasm");
+    // The wasm runtime is already set up for the GPU (one thread); the page
+    // restarts the worker on the CPU instead of falling back in place.
+    console.warn("WebGPU session failed", e);
+    throw new JobError("gpu", "WebGPU oturumu açılamadı.");
   }
   post({
     type: "ready",
     provider: engine.provider === "webgpu" ? "webgpu" : "wasm",
     gpu: pick.gpu,
-    fallbackReason: reason,
+    fallbackReason: pick.reason ?? cpuReason,
   });
   return engine;
 }
 
-function getEngine(choice: ProviderChoice = "auto") {
+function getEngine() {
   if (!enginePromise) {
-    enginePromise = loadEngine(choice).catch((e) => {
+    enginePromise = loadEngine(providerChoice).catch((e) => {
       enginePromise = null;
       throw e;
     });
@@ -159,11 +170,14 @@ class Job {
   private lastPost = 0;
   private started = performance.now();
 
+  private onGpu: boolean;
+
   constructor(
     readonly id: number,
     engine: Engine,
     options: DecodeOptions,
   ) {
+    this.onGpu = engine.provider === "webgpu";
     this.rec = engine.createRecognizer(options);
     this.rec.onFeature = (f) => this.bands.push(f);
   }
@@ -183,7 +197,15 @@ class Job {
     if (last) this.rec.inputFinished();
     while (this.rec.isReady()) {
       if (this.isCancelled) return;
-      await this.rec.decodeChunk();
+      try {
+        await this.rec.decodeChunk();
+      } catch (e) {
+        // On the GPU this is a driver or device failure (lost device, out of
+        // memory); the page can retry on the CPU.
+        if (!this.onGpu) throw e;
+        console.warn("WebGPU decode failed", e);
+        throw new JobError("gpu", "Ekran kartı (WebGPU) yazıya dökme sırasında hata verdi.");
+      }
       this.maybePost();
     }
   }
@@ -366,7 +388,9 @@ self.onmessage = (ev: MessageEvent<ToWorker>) => {
   const m = ev.data;
   switch (m.type) {
     case "init":
-      getEngine(m.provider).catch((e) =>
+      providerChoice = m.provider;
+      cpuReason = m.reason ?? null;
+      getEngine().catch((e) =>
         post({ type: "error", jobId: null, code: e instanceof JobError ? e.code : "model", message: String(e?.message ?? e) }),
       );
       break;

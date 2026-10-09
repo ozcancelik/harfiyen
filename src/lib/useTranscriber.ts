@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DecodeOptions, Word } from "../engine";
-import type { FromWorker, ToWorker } from "../worker/protocol";
+import type { FromWorker, ProviderChoice, ToWorker } from "../worker/protocol";
 import { decodeWithAudioContext } from "./decodeFallback";
 import { LiveMeter, type AuraLevels } from "../render/aura";
 import { MicError, startMicrophone, type Microphone } from "./microphone";
@@ -40,6 +40,19 @@ export interface Job {
   error: string | null;
 }
 
+const PROVIDER_KEY = "harfiyen.provider";
+
+function loadProvider(): ProviderChoice {
+  try {
+    const v = localStorage.getItem(PROVIDER_KEY);
+    return v === "webgpu" || v === "wasm" ? v : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+const GPU_FAILED = "Ekran kartı (WebGPU) hata verdi, işlemci (WASM) kullanılıyor.";
+
 function append(a: Float32Array, b: Float32Array) {
   if (!b.length) return a;
   const out = new Float32Array(a.length + b.length);
@@ -60,6 +73,11 @@ export function useTranscriber() {
   const punctWaiters = useRef(new Map<number, { resolve: (w: string[]) => void; reject: (e: Error) => void }>());
   const nextPunctId = useRef(1);
   const nextId = useRef(1);
+  /** The user's choice; the worker may run on the CPU anyway after a GPU failure. */
+  const [provider, setProviderState] = useState<ProviderChoice>(loadProvider);
+  const workerProvider = useRef<ProviderChoice>(provider);
+  const cpuReason = useRef<string | undefined>(undefined);
+  const onGpuFailure = useRef(() => {});
 
   const update = useCallback((id: number, fn: (j: Job) => Job) => {
     setJob((j) => {
@@ -88,7 +106,7 @@ export function useTranscriber() {
     [],
   );
 
-  useEffect(() => {
+  const spawn = useCallback(() => {
     const w = new Worker(new URL("../worker/asr.worker.ts", import.meta.url), { type: "module" });
     workerRef.current = w;
     const settle = (ok: boolean) => {
@@ -97,6 +115,8 @@ export function useTranscriber() {
       waiters.forEach((r) => r(ok));
     };
     w.onmessage = async (ev: MessageEvent<FromWorker>) => {
+      // A replaced worker may still have messages in flight.
+      if (workerRef.current !== w) return;
       const m = ev.data;
       switch (m.type) {
         case "download":
@@ -159,6 +179,10 @@ export function useTranscriber() {
           punctWaiters.current.delete(m.id);
           break;
         case "error": {
+          if (m.code === "gpu") {
+            onGpuFailure.current();
+            break;
+          }
           if (m.jobId === null) {
             setEngineState({ phase: "error", message: m.message });
             settle(false);
@@ -185,13 +209,39 @@ export function useTranscriber() {
         }
       }
     };
-    return () => w.terminate();
   }, [send, update, setEngineState]);
+
+  useEffect(() => {
+    spawn();
+    return () => {
+      workerRef.current?.terminate();
+      workerRef.current = null;
+    };
+  }, [spawn]);
+
+  /**
+   * Replace the worker. The wasm runtime fixes its thread count when it
+   * starts and GPU memory is only reliably freed with the worker, so a
+   * provider change means a fresh worker (the model comes from the cache).
+   */
+  const restartWorker = useCallback(
+    (p: ProviderChoice, reason?: string) => {
+      workerRef.current?.terminate();
+      workerProvider.current = p;
+      cpuReason.current = reason;
+      for (const w of punctWaiters.current.values()) w.reject(new Error("Yarıda kaldı"));
+      punctWaiters.current.clear();
+      setPunct({ phase: "idle" });
+      setEngineState({ phase: "idle" });
+      spawn();
+    },
+    [spawn, setEngineState],
+  );
 
   const prepare = useCallback(() => {
     const e = engineRef.current;
     if (e.phase !== "idle" && e.phase !== "error") return;
-    send({ type: "init", provider: "auto" });
+    send({ type: "init", provider: workerProvider.current, reason: cpuReason.current });
     if (e.phase === "error") setEngineState({ phase: "idle" });
   }, [send, setEngineState]);
 
@@ -344,7 +394,43 @@ export function useTranscriber() {
     [update],
   );
 
-  return { engine, job, liveWaiting, prepare, start, startLive, stopLive, cancel, clear, setWords, liveLevels, liveMeter, punctuate, punct };
+  // WebGPU failed (loading or mid-file): go on with the CPU. A file starts
+  // over there; a recording stops, since its audio so far went to the old worker.
+  onGpuFailure.current = () => {
+    const j = jobRef.current;
+    restartWorker("wasm", GPU_FAILED);
+    if (j?.status === "running" && j.live) {
+      void stopLive();
+      update(j.id, (x) => ({
+        ...x,
+        status: "error",
+        tentative: [],
+        error: "Ekran kartı hata verdi, kayıt durduruldu. İşlemciyle yeniden kaydedebilirsin.",
+      }));
+    } else if (j?.status === "running" && j.file) {
+      start(j.file, j.options);
+      return;
+    }
+    prepare();
+  };
+
+  /** Choose where the model runs; reloads it (from the cache) if already loaded. */
+  const setProvider = useCallback(
+    (p: ProviderChoice) => {
+      try {
+        localStorage.setItem(PROVIDER_KEY, p);
+      } catch {
+        // Not remembered, still used for this visit.
+      }
+      setProviderState(p);
+      const was = engineRef.current.phase;
+      restartWorker(p);
+      if (was !== "idle") prepare();
+    },
+    [restartWorker, prepare],
+  );
+
+  return { engine, job, liveWaiting, provider, setProvider, prepare, start, startLive, stopLive, cancel, clear, setWords, liveLevels, liveMeter, punctuate, punct };
 }
 
 export { MicError };
