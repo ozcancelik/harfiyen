@@ -1,0 +1,11 @@
+# scripts/prepare_models.py
+onnx>=1.17
+onnxsim>=0.4
+numpy>=1.26
+# scripts/make_test_refs.py (only for the engine test)
+sherpa-onnx>=1.12
+kaldi-native-fbank>=1.20
+soundfile>=0.12
+pyyaml>=6
+onnxruntime>=1.20  # quantization (scripts/prepare_models.py)
+punctuators>=0.0.7  # scripts/make_punct_refs.py (test references only)
