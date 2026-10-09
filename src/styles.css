@@ -1036,20 +1036,90 @@ a {
     overflow: auto;
   }
 
+  /* One column: the workspace dissolves so the transport can sit right under
+     the player, ahead of the transcript and inspector. */
   .shell {
+    display: flex;
+    flex-direction: column;
     height: auto;
     min-height: 100%;
-    grid-template-rows: 44px auto 64px 26px;
+  }
+
+  .shell > * {
+    flex: none;
+  }
+
+  .toolbar {
+    height: 44px;
+    gap: 6px;
+    padding: 0 10px;
+  }
+
+  /* Only the file name may shrink; buttons keep their size. */
+  .toolbar > * {
+    flex-shrink: 0;
+  }
+
+  .toolbar__title {
+    flex-shrink: 1;
+  }
+
+  .tb-btn {
+    white-space: nowrap;
+  }
+
+  .menu {
+    max-width: calc(100vw - 20px);
   }
 
   .workspace {
-    grid-template-columns: minmax(0, 1fr);
+    display: contents;
   }
 
   .viewer {
-    order: -1;
+    order: 1;
     height: 56vw;
     min-height: 220px;
+  }
+
+  /* Timeline gets its own full-width row above the buttons. */
+  .transport {
+    order: 2;
+    flex-wrap: wrap;
+    row-gap: 4px;
+    padding: 10px 10px 6px;
+  }
+
+  .transport .timeline {
+    order: -1;
+    flex: 1 0 100%;
+    height: 64px;
+    margin: 0;
+  }
+
+  .tp-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .tp-time {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+  }
+
+  .transcript-pane {
+    order: 3;
+  }
+
+  .inspector {
+    order: 4;
+  }
+
+  .statusbar {
+    order: 5;
+    height: 26px;
+    margin-top: auto;
   }
 
   /* Empty state: let the stage grow to fit the welcome text instead of clipping it. */
@@ -1072,12 +1142,18 @@ a {
 }
 
 @media (max-width: 480px) {
+  .tb-btn--open,
   .tb-btn--github {
     padding: 0 8px;
   }
 
+  .tb-btn--open .tb-btn__label,
   .tb-btn--github .tb-btn__label {
     display: none;
+  }
+
+  .brand {
+    margin-right: 4px;
   }
 
   .viewer {

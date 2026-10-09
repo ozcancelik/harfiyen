@@ -4,3 +4,4 @@ dist
 public/models
 *.local
 .DS_Store
+.cert

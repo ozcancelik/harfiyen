@@ -208,8 +208,8 @@ export function App() {
         <h1 className="brand">
           <img src={`${import.meta.env.BASE_URL}brand/harfiyen-logo-light.png`} alt="Harfiyen" />
         </h1>
-        <button className="tb-btn" onClick={() => picker.current?.click()}>
-          <IconOpen /> Dosya aç
+        <button className="tb-btn tb-btn--open" onClick={() => picker.current?.click()} title="Dosya aç">
+          <IconOpen /> <span className="tb-btn__label">Dosya aç</span>
         </button>
         <input
           ref={picker}

@@ -90,6 +90,22 @@ npm run dev        # http://localhost:5173
 önbellekten, internetsiz çalışır. Noktalama ilk kullanıldığında ayrıca yaklaşık 60 MB indirilir ve
 önbelleğe alınır. Ses ve metin işlenmek için sunucuya gönderilmez.
 
+### Telefondan veya ağdaki başka bir cihazdan açmak
+
+Mikrofon, WebGPU ve çok iş parçacıklı WASM yalnızca güvenli bağlamda çalışır; `localhost` güvenli
+sayılır ama `http://192.168.x.x` sayılmaz. Yerel bir sertifika üret, geliştirme sunucusu `.cert/`
+klasörünü görünce kendiliğinden HTTPS ile ağa açılır (klasör git'e girmez):
+
+```bash
+mkcert -install
+mkdir -p .cert
+mkcert -cert-file .cert/dev.pem -key-file .cert/dev-key.pem localhost 127.0.0.1 <bilgisayarın-yerel-IP'si>
+npm run dev        # https://<bilgisayarın-yerel-IP'si>:5173
+```
+
+Telefonda uyarısız açılması için `mkcert -CAROOT` klasöründeki `rootCA.pem` dosyasını cihaza yükleyip
+güvenilir yap (iOS: Ayarlar → Genel → Hakkında → Sertifika Güven Ayarları).
+
 ## Kullanım
 
 | İşlem                      | Nasıl yapılır                                                                              |
