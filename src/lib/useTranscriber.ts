@@ -51,6 +51,9 @@ function append(a: Float32Array, b: Float32Array) {
 export function useTranscriber() {
   const workerRef = useRef<Worker | null>(null);
   const [engine, setEngine] = useState<EngineState>({ phase: "idle" });
+  const engineRef = useRef<EngineState>(engine);
+  /** Waiting for the model; each resolves with whether it became ready. */
+  const readyWaiters = useRef<((ok: boolean) => void)[]>([]);
   const [job, setJob] = useState<Job | null>(null);
   const jobRef = useRef<Job | null>(null);
   const [punct, setPunct] = useState<PunctState>({ phase: "idle" });
@@ -71,21 +74,41 @@ export function useTranscriber() {
     workerRef.current?.postMessage(m, transfer);
   }, []);
 
+  const setEngineState = useCallback((e: EngineState) => {
+    engineRef.current = e;
+    setEngine(e);
+  }, []);
+
+  /** Resolves once the model is ready (true) or failed to load (false). */
+  const engineReady = useCallback(
+    () =>
+      engineRef.current.phase === "ready"
+        ? Promise.resolve(true)
+        : new Promise<boolean>((r) => readyWaiters.current.push(r)),
+    [],
+  );
+
   useEffect(() => {
     const w = new Worker(new URL("../worker/asr.worker.ts", import.meta.url), { type: "module" });
     workerRef.current = w;
+    const settle = (ok: boolean) => {
+      const waiters = readyWaiters.current;
+      readyWaiters.current = [];
+      waiters.forEach((r) => r(ok));
+    };
     w.onmessage = async (ev: MessageEvent<FromWorker>) => {
       const m = ev.data;
       switch (m.type) {
         case "download":
-          setEngine({ phase: "downloading", loaded: m.loaded, total: m.total, fromCache: m.fromCache });
+          setEngineState({ phase: "downloading", loaded: m.loaded, total: m.total, fromCache: m.fromCache });
           break;
         case "compiling":
-          setEngine({ phase: "compiling" });
+          setEngineState({ phase: "compiling" });
           break;
         case "ready":
           console.debug(`[harfiyen] encoder on ${m.provider}${m.gpu ? `, ${m.gpu}` : ""}`);
-          setEngine({ phase: "ready", provider: m.provider, gpu: m.gpu, fallbackReason: m.fallbackReason });
+          setEngineState({ phase: "ready", provider: m.provider, gpu: m.gpu, fallbackReason: m.fallbackReason });
+          settle(true);
           break;
         case "meta":
           update(m.jobId, (j) => ({ ...j, duration: m.duration }));
@@ -137,7 +160,8 @@ export function useTranscriber() {
           break;
         case "error": {
           if (m.jobId === null) {
-            setEngine({ phase: "error", message: m.message });
+            setEngineState({ phase: "error", message: m.message });
+            settle(false);
             break;
           }
           const j = jobRef.current;
@@ -162,22 +186,31 @@ export function useTranscriber() {
       }
     };
     return () => w.terminate();
-  }, [send, update]);
+  }, [send, update, setEngineState]);
 
   const prepare = useCallback(() => {
-    setEngine((e) => {
-      if (e.phase === "idle" || e.phase === "error") send({ type: "init", provider: "auto" });
-      return e.phase === "error" ? { phase: "idle" } : e;
-    });
-  }, [send]);
+    const e = engineRef.current;
+    if (e.phase !== "idle" && e.phase !== "error") return;
+    send({ type: "init", provider: "auto" });
+    if (e.phase === "error") setEngineState({ phase: "idle" });
+  }, [send, setEngineState]);
 
   const mic = useRef<Microphone | null>(null);
+
+  /** A microphone start waiting for the model; bumping the ticket abandons it. */
+  const [liveWaiting, setLiveWaiting] = useState(false);
+  const liveTicket = useRef(0);
+  const cancelLiveWait = useCallback(() => {
+    liveTicket.current++;
+    setLiveWaiting(false);
+  }, []);
 
   const start = useCallback(
     (file: File, options: DecodeOptions) => {
       const prev = jobRef.current;
       if (prev?.status === "running") send({ type: "cancel", jobId: prev.id });
-      // Opening a file while recording ends the recording.
+      // Opening a file while recording (or waiting to record) ends the recording.
+      cancelLiveWait();
       void mic.current?.stop();
       mic.current = null;
       prepare();
@@ -202,7 +235,7 @@ export function useTranscriber() {
       setJob(j);
       send({ type: "transcribe", jobId: j.id, file, options });
     },
-    [prepare, send],
+    [prepare, send, cancelLiveWait],
   );
 
   /** Real-time microphone meter (levels for the aura, peaks for the timeline). */
@@ -215,6 +248,16 @@ export function useTranscriber() {
       const prev = jobRef.current;
       if (prev?.status === "running") send({ type: "cancel", jobId: prev.id });
       prepare();
+      // Open the microphone only once the model is ready: speech captured
+      // before that would pile up unseen and arrive as one late burst.
+      const ticket = ++liveTicket.current;
+      if (engineRef.current.phase !== "ready") {
+        setLiveWaiting(true);
+        const ok = await engineReady();
+        if (ticket !== liveTicket.current) return;
+        setLiveWaiting(false);
+        if (!ok) return; // The status bar shows why.
+      }
       const id = nextId.current++;
       let meter: LiveMeter | null = null;
       const m = await startMicrophone((pcm) => {
@@ -246,11 +289,12 @@ export function useTranscriber() {
       setJob(j);
       send({ type: "live-start", jobId: id, sampleRate: m.sampleRate, options });
     },
-    [prepare, send],
+    [prepare, send, engineReady],
   );
 
   /** Stop the microphone; the recording becomes the job's file. */
   const stopLive = useCallback(async () => {
+    cancelLiveWait();
     const j = jobRef.current;
     const m = mic.current;
     if (!j?.live || !m) return;
@@ -261,13 +305,14 @@ export function useTranscriber() {
     update(j.id, (x) => ({ ...x, recording: false }));
     const file = await m.stop();
     update(j.id, (x) => ({ ...x, file, duration: x.duration ?? x.decoded }));
-  }, [send, update]);
+  }, [send, update, cancelLiveWait]);
 
   const cancel = useCallback(() => {
+    cancelLiveWait();
     const j = jobRef.current;
     if (j?.live && j.recording) void stopLive();
     else if (j?.status === "running") send({ type: "cancel", jobId: j.id });
-  }, [send, stopLive]);
+  }, [send, stopLive, cancelLiveWait]);
 
   const clear = useCallback(() => {
     cancel();
@@ -299,7 +344,7 @@ export function useTranscriber() {
     [update],
   );
 
-  return { engine, job, prepare, start, startLive, stopLive, cancel, clear, setWords, liveLevels, liveMeter, punctuate, punct };
+  return { engine, job, liveWaiting, prepare, start, startLive, stopLive, cancel, clear, setWords, liveLevels, liveMeter, punctuate, punct };
 }
 
 export { MicError };

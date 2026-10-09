@@ -36,8 +36,13 @@ function EngineItem({ engine }: { engine: EngineState }) {
   }
 }
 
-function JobItem({ job }: { job: Job | null }) {
+function JobItem({ job, engine, liveWaiting }: { job: Job | null; engine: EngineState; liveWaiting: boolean }) {
+  // The model progress is on the right; the job itself has not started yet.
+  if (liveWaiting) return <span className="sb-item" role="status">Model hazır olunca kayıt başlayacak</span>;
   if (!job) return null;
+  if (job.status === "running" && !job.live && engine.phase !== "ready" && engine.phase !== "error") {
+    return <span className="sb-item" role="status">Model hazır olunca yazıya dökme başlayacak</span>;
+  }
   if (job.live && job.status === "running") {
     return (
       <span className="sb-item" role="status">
@@ -124,9 +129,11 @@ export function StatusBar({
   burn,
   notice,
   punct,
+  liveWaiting,
 }: {
   engine: EngineState;
   job: Job | null;
+  liveWaiting: boolean;
   burn: BurnState;
   punct: PunctState;
   /** One-off problem to show, e.g. microphone permission denied. */
@@ -139,7 +146,7 @@ export function StatusBar({
           {notice}
         </span>
       )}
-      <JobItem job={job} />
+      <JobItem job={job} engine={engine} liveWaiting={liveWaiting} />
       <PunctItem punct={punct} />
       <BurnItem burn={burn} />
       <span className="statusbar__spacer" />

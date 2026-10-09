@@ -8,6 +8,8 @@ interface Props {
   words: Word[];
   tentative: Word[];
   running: boolean;
+  /** Running, but the model is still loading. */
+  waiting?: boolean;
   time: number;
   playing: boolean;
   onSeek: (t: number) => void;
@@ -131,7 +133,7 @@ const CueRow = memo(function CueRow({
   a.cue.words.length === b.cue.words.length &&
   a.cue.words.every((w, i) => w === b.cue.words[i]));
 
-export function Transcript({ words, tentative, running, time, playing, onSeek, onEdit }: Props) {
+export function Transcript({ words, tentative, running, waiting, time, playing, onSeek, onEdit }: Props) {
   const all = useMemo(() => (tentative.length ? words.concat(tentative) : words), [words, tentative]);
   const cues = useMemo(() => buildCues(all, READING_RULES), [all]);
   const active = playing || time > 0 ? activeIndex(all, time) : -1;
@@ -173,7 +175,11 @@ export function Transcript({ words, tentative, running, time, playing, onSeek, o
   if (!all.length) {
     return (
       <p className="empty-note" aria-live="polite">
-        {running ? "Konuşma bekleniyor…" : "Bu dosyada konuşma bulunamadı."}
+        {waiting
+          ? "Model hazırlanıyor, bitince yazıya dökme başlayacak."
+          : running
+            ? "Konuşma bekleniyor…"
+            : "Bu dosyada konuşma bulunamadı."}
       </p>
     );
   }

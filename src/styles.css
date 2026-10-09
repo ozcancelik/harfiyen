@@ -1648,6 +1648,11 @@ a {
   background: #e05a45;
 }
 
+.rec-btn--wait {
+  opacity: 0.75;
+  animation: none;
+}
+
 .rec-btn__stop {
   width: 10px;
   height: 10px;

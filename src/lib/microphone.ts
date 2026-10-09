@@ -62,6 +62,9 @@ export async function startMicrophone(onChunk: (pcm: Float32Array) => void): Pro
   }
 
   const ctx = new AudioContext();
+  // Started after waiting for the model, i.e. outside the click; some
+  // browsers then create the context suspended.
+  if (ctx.state === "suspended") void ctx.resume().catch(() => {});
   const url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
   try {
     await ctx.audioWorklet.addModule(url);

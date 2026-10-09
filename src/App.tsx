@@ -51,7 +51,7 @@ function baseName(name: string) {
 }
 
 export function App() {
-  const { engine, job, prepare, start, startLive, stopLive, cancel, setWords, liveLevels, liveMeter, punctuate, punct } =
+  const { engine, job, liveWaiting, prepare, start, startLive, stopLive, cancel, setWords, liveLevels, liveMeter, punctuate, punct } =
     useTranscriber();
   const [autoPunct, setAutoPunct] = useState(() => localStorage.getItem("harfiyen.punct") !== "off");
   useEffect(() => localStorage.setItem("harfiyen.punct", autoPunct ? "on" : "off"), [autoPunct]);
@@ -168,7 +168,7 @@ export function App() {
       const inField = !!(e.target as HTMLElement).closest("input, textarea, select, [contenteditable]");
       if (!inField && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "r") {
         e.preventDefault();
-        if (job?.recording) void stopLive();
+        if (job?.recording || liveWaiting) void stopLive();
         else void goLiveRef.current();
         return;
       }
@@ -180,7 +180,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, job?.recording, stopLive]);
+  }, [undo, job?.recording, liveWaiting, stopLive]);
 
   const changeSettings = (s: CaptionSettings) => {
     setSettings(s);
@@ -266,6 +266,7 @@ export function App() {
                 words={words}
                 tentative={job.tentative}
                 running={job.status === "running"}
+                waiting={job.status === "running" && !job.live && engine.phase !== "ready" && engine.phase !== "error"}
                 time={player.time}
                 playing={player.playing}
                 onSeek={player.seek}
@@ -301,9 +302,15 @@ export function App() {
                 <button className="btn btn--primary btn--large" onClick={() => picker.current?.click()}>
                   Dosya aç
                 </button>
-                <button className="btn btn--large" onClick={goLive}>
-                  <IconMic /> Mikrofonla başla
-                </button>
+                {liveWaiting ? (
+                  <button className="btn btn--large" onClick={stopLive} title="Kayıt beklemesini iptal et">
+                    Model hazırlanıyor, iptal et
+                  </button>
+                ) : (
+                  <button className="btn btn--large" onClick={goLive}>
+                    <IconMic /> Mikrofonla başla
+                  </button>
+                )}
               </div>
               <p className="dropzone__fine">
                 Dosyayı pencereye sürükleyebilirsin: MP4, MOV, MKV, WebM, MP3, M4A, WAV, FLAC, OGG. İlk kullanımda yaklaşık 105 MB model indirilir ve
@@ -339,7 +346,7 @@ export function App() {
       </div>
 
       <div className="transport">
-        <RecordButton recording={!!job?.recording} onStart={goLive} onStop={stopLive} />
+        <RecordButton recording={!!job?.recording} waiting={liveWaiting} onStart={goLive} onStop={stopLive} />
         <span className="transport__sep" aria-hidden />
         <button
           className="tp-btn"
@@ -376,7 +383,7 @@ export function App() {
         )}
       </div>
 
-      <StatusBar engine={engine} job={job} burn={burner.state} notice={notice} punct={punct} />
+      <StatusBar engine={engine} job={job} burn={burner.state} notice={notice} punct={punct} liveWaiting={liveWaiting} />
     </div>
   );
 }
