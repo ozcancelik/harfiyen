@@ -2,6 +2,7 @@
 import { ALL_FORMATS, AudioSampleSink, BlobSource, Input } from "mediabunny";
 import * as ort from "onnxruntime-web/webgpu";
 import ortWasmUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
+import ortMjsUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url";
 import {
   downmix,
   Engine,
@@ -83,6 +84,10 @@ async function loadEngine(choice: ProviderChoice): Promise<Engine> {
   post({ type: "compiling" });
   const pick = await pickProvider(choice);
   ort.env.wasm.wasmBinary = wasm.buffer as ArrayBuffer;
+  // wasm threads load this script. Without it they load the bundle ORT is
+  // built into, i.e. this worker in production, and never start. The dev
+  // server already serves ORT as its own module.
+  if (import.meta.env.PROD) ort.env.wasm.wasmPaths = { mjs: new URL(ortMjsUrl, self.location.href) };
   ort.env.wasm.numThreads = wasmThreads(pick.provider);
   ort.env.logLevel = "error";
 

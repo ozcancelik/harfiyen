@@ -5,3 +5,4 @@ public/models
 *.local
 .DS_Store
 .cert
+*.tsbuildinfo
