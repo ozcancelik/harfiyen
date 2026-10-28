@@ -118,7 +118,8 @@ export async function renderChrome(
     settings: c.settings as BurnJob["settings"],
     preset: c.preset as BurnJob["preset"],
     patch: patch as BurnJob["patch"],
-    kinetic: c.kinetic as BurnJob["kinetic"],
+    // On the aura, the kinetic stage must not draw its own ground over it.
+    kinetic: (c.picture === "aura" && c.kinetic ? { ...c.kinetic, backdrop: "aura" } : c.kinetic) as BurnJob["kinetic"],
     lang: o.language === "translation" ? (t.lang === "tr" ? "en" : "tr") : t.lang,
     speakers: names,
     dub: dub ? { original: Math.min(0.5, Math.max(0, o.original ?? 0)) } : undefined,
