@@ -4,9 +4,9 @@ Harfiyen'in motorlarını [MCP](https://modelcontextprotocol.io) sunucusu olarak
 çeviri, konuşmacı ayırma, boşluk kesme planı ve altyazılı video. Web uygulamasıyla aynı kod ve aynı modeller
 kullanılır (`../src`); ses ve video bilgisayardan çıkmaz.
 
-Oynatıcı ve canlı mikrofon burada yoktur. Altyazılı video iki yoldan yazılır: web uygulamasının dokuz stili ffmpeg ve
-libass ile; cam stili, aura ve kinetik tipografi (WebGPU ve canvas kodu, ffmpeg çizemez) uygulamanın kendi video
-yazıcısıyla, bilgisayardaki Chrome'da. Hangisinin kullanılacağını `render_captions` kendisi seçer.
+Oynatıcı ve canlı mikrofon burada yoktur. Altyazılı video, uygulamanın kendi video yazıcısıyla bilgisayardaki
+Chrome'da yazılır (cam stili, aura ve kinetik tipografi dahil, uygulamayla aynı çizilir); Chrome yoksa ffmpeg ve libass
+ile dokuz stil yazılır.
 
 ## Kurulum
 
@@ -16,8 +16,8 @@ Depo kökünde `npm install` ve `npm run models` (modeller `public/models` altı
 cd mcp && npm install
 ```
 
-ffmpeg ve ffprobe PATH'te olmalı. Cam, aura ve kinetik stiller için Chrome kurulu olmalı (yolu `CHROME` ile verilebilir;
-puppeteer-core tarayıcı indirmez). Modeller `HARFIYEN_MODELS` ile başka bir klasörden de okunabilir.
+ffmpeg ve ffprobe PATH'te olmalı. Altyazılı video için Google Chrome kurulu olmalı (yolu `CHROME` ile verilebilir;
+puppeteer-core tarayıcı indirmez); Chrome yoksa video ffmpeg ile yazılır, cam, aura ve kinetik stiller çizilemez. Modeller `HARFIYEN_MODELS` ile başka bir klasörden de okunabilir.
 Transkriptler `~/.harfiyen-mcp/transcripts` altında saklanır (`HARFIYEN_MCP_HOME` ile değişir).
 
 Claude Code'a eklemek için:
@@ -59,19 +59,21 @@ Uzun işler tek tek, sırayla çalışır (modeller belleği paylaşır) ve iler
 
 ## Chrome ile yazma
 
-`render_captions` şu durumlarda videoyu uygulamanın kendi render worker'ıyla (`../src/worker/render.worker.ts`),
-görünmez bir Chrome'da yazar; çıktı uygulamanınkiyle aynı çizilir:
+`render_captions` videoyu varsayılan olarak uygulamanın kendi render worker'ıyla (`../src/worker/render.worker.ts`),
+görünmez bir Chrome'da yazar; çıktı uygulamanınkiyle aynı çizilir (cam stili, aura, kinetik tipografi, konuşmacı etiketi,
+yazı tipleri). Chrome yalnızca video yazmak için gerekir; yazıya döküm, çeviri, seslendirme ve konuşmacı işleri onsuz çalışır.
 
-- `preset: cam`, `kinetic`, `picture: aura`, `aura`, `aura_style` istendiğinde;
-- projede cam stili, kinetik tipografi ya da gizli/bulanık görüntü varsa (başka bir `style` istenmediyse);
-- `engine: chrome` ile her stil için.
+- `engine: auto` (varsayılan): Chrome kuruluysa Chrome, değilse ffmpeg ve libass; cevapta ffmpeg'in uygulamadan farklı çizebileceği not edilir.
+- `engine: chrome`: Chrome şart, yoksa hata. `engine: ffmpeg`: Chrome'a hiç gitmez.
+- `preset: cam`, `kinetic`, `picture: aura`, `aura`, `aura_style` yalnızca Chrome ile çizilir; Chrome yoksa hata verir.
+- Stil, proje ve `preset` verilmediyse `sade` ile başlanır (ffmpeg yolundaki varsayılanla aynı). Projedeki ayarlar olduğu gibi kullanılır.
 
-Chrome yoksa projedekiler için en yakın ffmpeg stili kullanılır ve cevapta not düşülür; elle istenenler için hata verilir.
-`engine: ffmpeg` Chrome'a hiç gitmez. Kadraj, seslendirme (`original_volume`), boşluk kesme, `crf` ve `width` iki yolda da çalışır.
-
-İlk kullanımda `../src` ve `render-host/` Vite ile derlenip `~/.harfiyen-mcp/render-host` altına konur (birkaç saniye);
-kod değişince kendiliğinden yeniden derlenir. Şimdilik yalnızca macOS'ta denendi. Chrome yolunda `size` uygulamanın boyudur
-(kısa kenarın payı), `font_file`, `bold`, logo ve arka plan fotoğrafı yoktur. Kaynak video sayfaya bütün olarak okunur.
+Kadraj, seslendirme (`original_volume`), boşluk kesme, `crf`, `width` ve `font_file` iki yolda da çalışır. Kaynak video sayfaya
+belleğe değil tarayıcının özel diskine (OPFS) akıtılır, uzun videolar bellek tutmaz; seslendirme sesi ise bütün olarak
+belleğe alınır (saatlik bir videoda yaklaşık 1 GB). İlk kullanımda `../src` ve `render-host/` Vite ile derlenip
+`~/.harfiyen-mcp/render-host` altına konur (birkaç saniye); kod değişince kendiliğinden yeniden derlenir. Chrome'un yolu
+`CHROME` ile verilebilir. Şimdilik yalnızca macOS'ta denendi. Chrome yolunda `size` uygulamanın boyudur (kısa kenarın
+payı); `bold`, logo ve arka plan fotoğrafı yoktur. Google Chrome H.264 kodlayıcısını içerir; bazı Chromium sürümleri içermez.
 
 ## Altyazı stilleri ve yazı tipleri
 
@@ -119,6 +121,11 @@ Web uygulamasının dört sesi CPU'da çalışır: EMA Lightning (varsayılan), 
 - `dub`: transkripti ya da çevirisini (`language: translation`) okur. Her satır kendi zamanında başlar; yerine sığmayan
   satır en fazla 1,35 kat (Supertonic'te 1,15) hızlı okunur, taşan son satırlar öncekilerin sessizliğine kayar, hâlâ
   sığmayan için uyarı verilir. Türkçe videoya İngilizce voice-over: `translate`, sonra `dub` ile `language: translation`.
+- `speaker_voices` (`dub`): konuşmacıları `tell_speakers` ile ayırdıktan sonra her birine ayrı ses verilir, örneğin
+  `[{ speaker: "Konuşmacı 1", style: "M3" }, { speaker: "2", style: "F1" }]`. Konuşmacı adıyla ya da numarasıyla (1'den)
+  seçilir; verilmeyen alan genel ses ayarından gelir, listede olmayan konuşmacı genel sesle okunur. Bir satırı, ilk
+  kelimesini söyleyen konuşmacı okur. Supertonic'te sesler M1–M5 ve F1–F5; diğer modellerde tek ses vardır, orada `pitch` ve
+  `seed` ayırır. Birden çok model kullanılırsa hepsi bellekte tutulur.
 - `render_captions` seslendirmeyi varsa karıştırır (`original_volume` 0–0,5, uygulamadaki gibi varsayılan 0: dosyanın
   kendi sesi duyulmaz). Seslendirmeyle aynı dildeki altyazı sesin zamanını izler (`follow_dub`); jump cut okunan
   cümlelerin altını kesmez. Metin ya da çeviri `dub`dan sonra değişirse seslendirme "eski" sayılır, altyazı sesi

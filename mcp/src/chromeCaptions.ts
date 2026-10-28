@@ -3,6 +3,7 @@
 // as in captions.ts; the worker does the drawing, the sound mix and the encoding.
 
 import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import type { Word } from "../../src/engine";
 import { cropFor, framing, RATIO, type Crop } from "../../src/lib/crop";
 import { keptLength, keptParts } from "../../src/lib/cuts";
@@ -28,6 +29,8 @@ export interface ChromeStyle {
   kinetic?: { style?: string; palette?: string };
   /** "aura": the aura in place of the video's picture. */
   picture?: "video" | "aura";
+  /** A TTF or OTF file to draw the captions with. */
+  fontFile?: string;
 }
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
@@ -108,16 +111,17 @@ export async function renderChrome(
   }
   // 44-byte WAV header, then 16-bit mono PCM at 48 kHz.
   if (dub) inputs.dub = readFileSync(dubWavPath(t.id)).subarray(44);
+  if (c.fontFile) inputs.font = readFileSync(c.fontFile);
 
   const frame = frameFor(o, info, noPicture);
   const hevc = o.codec === "hevc";
   const names = o.speakerNames === false ? null : (t.speakers?.names ?? null);
   const job = (encoder: Encode["encoder"]): BurnJob => ({
-    name: "source.mp4",
     words,
     settings: c.settings as BurnJob["settings"],
     preset: c.preset as BurnJob["preset"],
     patch: patch as BurnJob["patch"],
+    font: c.fontFile ? { name: basename(c.fontFile) } : undefined,
     // On the aura, the kinetic stage must not draw its own ground over it.
     kinetic: (c.picture === "aura" && c.kinetic ? { ...c.kinetic, backdrop: "aura" } : c.kinetic) as BurnJob["kinetic"],
     lang: o.language === "translation" ? (t.lang === "tr" ? "en" : "tr") : t.lang,
@@ -148,6 +152,7 @@ export async function renderChrome(
     result = await renderInChrome(job(null), inputs, o.output, writing);
   }
   progress(1);
+  if (result.fontMissing) notes.push(`Yazı tipinde şu Türkçe harfler yok: ${result.fontMissing}; bunlar yedek yazı tipiyle çizildi.`);
   const size = frame.out;
   return { output: o.output, seconds: keptLength(parts), cuts: cuts.length, size: `${size.width}x${size.height}`, dubbed: !!dub, notes, gpu: result.gpu };
 }

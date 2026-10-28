@@ -544,13 +544,13 @@ server.registerTool(
   {
     title: "Altyazılı video",
     description:
-      "Altyazıyı videoya yazar (ffmpeg + libass). Transkript web uygulamasının .harfiyen projesinden geldiyse (import_project) projenin altyazı stili, yazı tipi, renkleri, boyutu, kadrajı (kırpma kutusu ya da sığdırma, bulanık zemin) ve boşluk kesme ayarı varsayılan olarak kullanılır; verilen parametreler bunun üstüne yazar, use_project=false projeyi yok sayar. Stiller: klasik (koyu kutu), sade (gölgeli), karaoke (söylenen kelime renkle dolar), akis (kelimeler söylendikçe yerinde belirir), odak (bulanıktan netleşir), vurgu (söylenen kelime renkli işaretleyici), pop (ortada 3 iri zıplayan kelime), netles (ortada tek iri kelime bulanıktan netleşir), tek-kelime (ortada tek iri kelime). Yalnızca ses dosyasında koyu bir zemin kullanılır. Cam stili, aura ve kinetik tipografi ffmpeg ile çizilemez: bunlar istenince (preset=cam, kinetic, picture=aura, aura, aura_style) ya da projede varsa video, uygulamanın kendi çizim koduyla kurulu Chrome'da yazılır (engine=auto; Chrome yoksa proje için en yakın ffmpeg stili kullanılır ve cevapta not düşülür, istenen için hata verilir). engine=chrome her stili uygulamanın çizimiyle yazar; Chrome yolunda size uygulamanın boyudur (kısa kenarın payı), font_file ve bold yoktur, logo ve arka plan fotoğrafı henüz yok.",
+      "Altyazıyı videoya yazar (ffmpeg + libass). Transkript web uygulamasının .harfiyen projesinden geldiyse (import_project) projenin altyazı stili, yazı tipi, renkleri, boyutu, kadrajı (kırpma kutusu ya da sığdırma, bulanık zemin) ve boşluk kesme ayarı varsayılan olarak kullanılır; verilen parametreler bunun üstüne yazar, use_project=false projeyi yok sayar. Stiller: klasik (koyu kutu), sade (gölgeli), karaoke (söylenen kelime renkle dolar), akis (kelimeler söylendikçe yerinde belirir), odak (bulanıktan netleşir), vurgu (söylenen kelime renkli işaretleyici), pop (ortada 3 iri zıplayan kelime), netles (ortada tek iri kelime bulanıktan netleşir), tek-kelime (ortada tek iri kelime). Yalnızca ses dosyasında koyu bir zemin kullanılır. Video varsayılan olarak uygulamanın kendi çizim koduyla, kurulu Chrome'da yazılır: cam stili, aura ve kinetik tipografi (preset=cam, kinetic, picture=aura, aura, aura_style) yalnızca böyle çizilir. Chrome yoksa ffmpeg kullanılır ve cevapta not düşülür (cam, aura ve kinetik istendiyse hata verilir). Chrome yolunda size uygulamanın boyudur (kısa kenarın payı), bold yoktur, logo ve arka plan fotoğrafı henüz yok.",
     inputSchema: {
       id: z.string(),
       output: z.string().describe("Yazılacak .mp4 dosyasının yolu"),
       use_project: z.boolean().default(true).describe("Transkript bir Harfiyen projesinden geldiyse onun stilini ve kadrajını kullan"),
       style: z.enum(["klasik", "sade", "karaoke", "akis", "odak", "vurgu", "pop", "netles", "tek-kelime"]).optional(),
-      engine: z.enum(["auto", "ffmpeg", "chrome"]).default("auto").describe("auto: cam, aura ve kinetik gerekiyorsa Chrome, değilse ffmpeg; chrome: her şeyi uygulamanın çizimiyle yaz; ffmpeg: Chrome'a hiç gitme"),
+      engine: z.enum(["auto", "ffmpeg", "chrome"]).default("auto").describe("auto: Chrome kuruluysa uygulamanın kendi çizimiyle (Chrome), değilse ffmpeg; chrome: Chrome şart (yoksa hata); ffmpeg: Chrome'a hiç gitme"),
       preset: z.enum(["klasik", "karaoke", "dolgu", "akis", "odak", "vurgu", "pop", "tek", "netles", "sade", "cam"]).optional().describe("Uygulamanın altyazı stili (Chrome ile yazılır); cam yalnızca burada var"),
       kinetic: z.enum(["dugum", "pano", "fizik", "kamera", "poster", "darbe", "maske", "tunel"]).optional().describe("Altyazı yerine tam ekran kinetik tipografi (Chrome ile yazılır)"),
       kinetic_palette: z.enum(["gece", "neon", "krem", "mercan", "firuze"]).optional(),
@@ -638,22 +638,22 @@ server.registerTool(
         width: a.width,
       };
 
-      // The app's own renderer draws what ffmpeg cannot: asked for by hand, or in the project (unless another style was asked for).
+      // The app's own renderer (Chrome) draws every look as the app does; ffmpeg is the stand-in when there is no Chrome.
       const asked = [a.preset, a.kinetic, a.kinetic_palette, a.picture === "aura" || undefined, a.aura, a.aura_style].some((x) => x !== undefined);
-      const projectWants = a.use_project && a.style === undefined && look.chromeOnly.length > 0;
-      const wantChrome = a.engine === "chrome" || (a.engine === "auto" && (asked || projectWants));
-      const chrome = wantChrome ? findChrome() : null;
-      if (wantChrome && !chrome && (a.engine === "chrome" || asked)) throw new Error(missingChrome());
-      if (chrome && a.font_file) throw new Error("font_file Chrome yolunda yok (uygulamanın paketli yazı tipleri kullanılır); engine=ffmpeg ile yaz.");
+      const chrome = a.engine === "ffmpeg" ? null : findChrome();
+      if (!chrome && (a.engine === "chrome" || asked)) throw new Error(missingChrome());
+      const standIn = !chrome && a.engine === "auto" ? "Chrome bulunamadı; altyazı ffmpeg ile yazıldı, uygulamadakinden farklı çizilebilir (konuşmacı adı gibi). Chrome kurulursa uygulamanın kendi çizimi kullanılır." : "";
 
+      const early: string[] = standIn ? [standIn] : [];
       let r: { output: string; seconds: number; cuts: number; size: string; dubbed: boolean; notes: string[] };
       let drawnBy = "";
       if (chrome) {
-        const family = a.font ?? undefined;
+        const family = a.font_file ? undefined : (a.font ?? undefined);
         const fontId = family ? fontIdOf(family) : undefined;
         const c: ChromeStyle = {
           settings: a.use_project ? look.settings : undefined,
-          preset: a.preset ?? (a.style ? STYLE_PRESET[a.style] : undefined),
+          // No style asked for and no project: sade, the look this tool has always started from.
+          preset: a.preset ?? (a.style ? STYLE_PRESET[a.style] : look.settings ? undefined : "sade"),
           patch: {
             ...(fontId && { font: fontId }),
             ...(a.size !== undefined && { size: a.size }),
@@ -668,7 +668,9 @@ server.registerTool(
           },
           kinetic: a.kinetic ? { style: a.kinetic, ...(a.kinetic_palette && { palette: a.kinetic_palette }) } : undefined,
           picture: a.picture,
+          fontFile: a.font_file ? abs(a.font_file) : undefined,
         };
+        if (a.bold !== undefined) early.push("bold Chrome yolunda yok; kalınlığı uygulama yazı tipine göre kendisi seçer.");
         // A palette alone changes the project's kinetic stage; it does not turn one on.
         if (!c.kinetic && a.kinetic_palette && (look.settings as { kinetic?: { on?: boolean } } | undefined)?.kinetic?.on) c.kinetic = { palette: a.kinetic_palette };
         const done = await renderChrome(t, opts, c, report);
@@ -685,7 +687,7 @@ server.registerTool(
       ].filter(Boolean);
       const used = given.length ? `\nProjeden: ${given.join(", ")}` : "";
       // What only the app's renderer draws is told about only when ffmpeg stood in for it.
-      const notes = [...(chrome ? [] : look.chromeOnly.map((x) => x.note)), ...look.notes].map((n) => `\nNot: ${n}`).join("");
+      const notes = [...early, ...(chrome ? [] : look.chromeOnly.map((x) => x.note)), ...look.notes].map((n) => `\nNot: ${n}`).join("");
       const dubbed = r.dubbed ? `\nSeslendirme karıştırıldı (orijinal ses %${Math.round(a.original_volume * 100)}).` : "";
       const more = r.notes.map((n) => `\nNot: ${n}`).join("");
       return `Yazıldı: ${r.output}\n${r.size}, ${r.seconds.toFixed(1)} sn${r.cuts ? `, ${r.cuts} kesim` : ""}${drawnBy}${used}${dubbed}${notes}${more}`;
@@ -893,6 +895,43 @@ const VoiceShape = {
   seed: z.number().int().min(0).default(0).describe("Aynı sesi farklı bir vurguyla okutur"),
 };
 
+const SpeakerVoices = z
+  .array(
+    z.object({
+      speaker: z.string().describe("Konuşmacının adı (tell_speakers, rename_speaker) ya da numarası (1'den)"),
+      voice: VoiceShape.voice.removeDefault().optional(),
+      style: VoiceShape.style.removeDefault().optional(),
+      pitch: VoiceShape.pitch.removeDefault().optional(),
+      seed: VoiceShape.seed.removeDefault().optional(),
+    }),
+  )
+  .optional()
+  .describe("Konuşmacı başına ses (önce tell_speakers çalışmış olmalı). Verilmeyen alan yukarıdaki ses ayarından gelir; listede olmayan konuşmacı o sesle okunur.");
+
+const voiceLabel = (v: Voice) => `${VOICE_INFO[v.model].name}${v.model === "supertonic" ? ` ${v.style}` : ""}`;
+
+/** Each listed speaker's voice, by the speaker's number: the base voice with what was given on top. */
+function speakerVoicesOf(
+  asked: z.infer<typeof SpeakerVoices>,
+  t: Transcript,
+  base: Voice,
+  lang: VoiceLang,
+): Map<number, { name: string; voice: Voice }> {
+  const out = new Map<number, { name: string; voice: Voice }>();
+  if (!asked?.length) return out;
+  const names = t.speakers?.names;
+  if (!names?.length) throw new Error("Konuşmacı başına ses için önce tell_speakers ile konuşmacılar ayrılmalı.");
+  for (const x of asked) {
+    const wanted = x.speaker.trim();
+    const byName = names.findIndex((n) => n.toLowerCase() === wanted.toLowerCase());
+    const index = byName >= 0 ? byName : /^\d+$/.test(wanted) ? Number(wanted) - 1 : -1;
+    if (index < 0 || index >= names.length) throw new Error(`"${x.speaker}" diye bir konuşmacı yok; olanlar: ${names.map((n, i) => `${i + 1}. ${n}`).join(", ")}.`);
+    const given = { ...(x.voice && { model: x.voice }), ...(x.style && { style: x.style }), ...(x.pitch !== undefined && { pitch: x.pitch }), ...(x.seed !== undefined && { seed: x.seed }) };
+    out.set(index, { name: names[index], voice: fitVoice({ ...base, ...given, lang }) });
+  }
+  return out;
+}
+
 /** The voice a tool asked for, moved to Supertonic where the language needs it. */
 function voiceOf(a: { voice: VoiceModel; style: string; pitch: number; seed: number }, lang: VoiceLang) {
   const asked: Voice = { lang, model: a.voice, style: a.style, pitch: a.pitch, seed: a.seed };
@@ -907,7 +946,7 @@ server.registerTool(
     title: "Seslendir",
     description:
       "Transkripti (ya da çevirisini) yapay bir sesle okuyup her satırı kendi zamanında yerleştirir. Yerine sığmayan satır 1,35 kata kadar hızlı okunur, taşan son satırlar öncekilerin sessizliğine kayar. Sonuç kaydedilir: render_captions seslendirmeyi videoya karıştırır, altyazıyı sesin zamanına uydurur; export_dub WAV olarak verir. Türkçe videoya İngilizce voice-over için önce translate, sonra language=translation. Supertonic dışındaki sesler hızlıdır; Supertonic gerçek zamanın birkaç katı hızında çalışır.",
-    inputSchema: { id: z.string(), language: Language, ...VoiceShape, background: Background },
+    inputSchema: { id: z.string(), language: Language, ...VoiceShape, speaker_voices: SpeakerVoices, background: Background },
   },
   (a, extra) =>
     heavy("dub", extra as unknown as Extra, a.background, async (report) => {
@@ -919,11 +958,16 @@ server.registerTool(
       if (!words.length) throw new Error("Okunacak metin yok.");
       const { voice, note } = voiceOf(a, lang);
       const lines = dubLines(words, dubBySentence(lang, t.lang));
+      // A line is read by whoever says its first word.
+      const per = speakerVoicesOf(a.speaker_voices, t, voice, lang);
+      const who = per.size ? labelWords(words, t.speakers) : words;
+      const voiceAt = (i: number) => per.get(who[lines[i].first]?.speaker ?? -1)?.voice ?? voice;
       const end = t.range?.end ?? t.duration;
       const started = Date.now();
-      const { clips, overflow } = await placeLines(lines, t.duration, end, voice, report);
+      const { clips, overflow } = await placeLines(lines, t.duration, end, per.size ? voiceAt : voice, report);
       const meta: DubMeta = {
         voice,
+        ...(per.size && { speakerVoices: [...per].map(([speaker, x]) => ({ speaker, name: x.name, voice: x.voice })) }),
         language: a.language,
         key: dubKey(words),
         duration: t.duration,
@@ -936,7 +980,7 @@ server.registerTool(
       saveDub(t.id, meta, clips);
       const spoken = meta.clips.reduce((n, c) => n + c.seconds, 0);
       const warn = overflow ? `\nUyarı: ${overflow.start.toFixed(1)}. saniyedeki son cümle sığmıyor, ${overflow.seconds.toFixed(1)} sn taşıyor; cümle kısaltılabilir.` : "";
-      return `Seslendirildi: ${meta.clips.length}/${lines.length} satır, ${spoken.toFixed(1)} sn ses (${VOICE_INFO[voice.model].name}${voice.model === "supertonic" ? ` ${voice.style}` : ""}), ${meta.elapsed.toFixed(1)} sn sürdü.${warn}${note}`;
+      return `Seslendirildi: ${meta.clips.length}/${lines.length} satır, ${spoken.toFixed(1)} sn ses (${VOICE_INFO[voice.model].name}${voice.model === "supertonic" ? ` ${voice.style}` : ""}), ${meta.elapsed.toFixed(1)} sn sürdü.${per.size ? `\n${[...per].map(([, x]) => `${x.name}: ${voiceLabel(x.voice)}`).join(", ")}` : ""}${warn}${note}`;
     }),
 );
 

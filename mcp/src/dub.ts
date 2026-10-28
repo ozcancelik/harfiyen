@@ -90,19 +90,25 @@ export async function speak(sp: Speaker, text: string, voice: Voice, speed = 1) 
   return trimSilence(resample(await sp.speak(text, speed / ratio, voice), (ratio * sp.rate) / RATE));
 }
 
-/** `end`: where the dub must be over by (the video's end, or the trim's); 0 for standalone text. */
+/**
+ * `end`: where the dub must be over by (the video's end, or the trim's); 0 for standalone text.
+ * `voice`: one voice for every line, or the voice of each line by its number (one per speaker).
+ */
 export async function placeLines(
   lines: DubLine[],
   duration: number,
   end: number,
-  voice: Voice,
+  voice: Voice | ((line: number) => Voice),
   progress: Progress,
 ): Promise<{ clips: DubClip[]; overflow: DubOverflow | null }> {
   progress(0, "ses yükleniyor");
-  const sp = await speaker(voice.model);
-  const st = voice.model === "supertonic";
-  const maxSpeed = st ? MAX_SPEED_SUPERTONIC : MAX_SPEED;
-  const lead = st ? LEAD_SUPERTONIC : 0;
+  const voiceOf = typeof voice === "function" ? voice : () => voice;
+  // What a line is read with: its model (each loaded once), and the speed limits that model allows.
+  const reader = async (line: number) => {
+    const v = voiceOf(line);
+    const st = v.model === "supertonic";
+    return { v, sp: await speaker(v.model), maxSpeed: st ? MAX_SPEED_SUPERTONIC : MAX_SPEED, lead: st ? LEAD_SUPERTONIC : 0 };
+  };
   const clips: DubClip[] = [];
   /** Per clip: its line, and its length at the model's own pace and how much faster it was read. */
   const made: { line: number; natural: number; speed: number }[] = [];
@@ -112,6 +118,7 @@ export async function placeLines(
   for (let i = 0; i < lines.length; i++) {
     progress(i / lines.length, `seslendiriliyor ${i + 1}/${lines.length}`);
     const line = lines[i];
+    const { v: voice, sp, maxSpeed, lead } = await reader(i);
     let audio = await speak(sp, line.text, voice);
     const seconds = audio.length / RATE;
     if (!timed) {
@@ -159,6 +166,7 @@ export async function placeLines(
     for (let k = last; k >= 0 && over > 0.05; k--) {
       const m = made[k];
       if (lines[m.line].start < end - TAIL) break;
+      const { v: voice, sp, maxSpeed } = await reader(m.line);
       if (m.speed >= maxSpeed) continue;
       const audio = await speak(sp, lines[m.line].text, voice, maxSpeed);
       if (!audio.length) continue;
@@ -289,7 +297,10 @@ export function writeDubWav(path: string, clips: DubClip[], duration: number): n
 
 /** What a dub keeps beside its WAV: how it was made and where each line sits, so captions can follow it. */
 export interface DubMeta {
+  /** The voice of everyone without one of their own below. */
   voice: Voice;
+  /** The voice of each speaker told apart (by number), where it is not `voice`. */
+  speakerVoices?: { speaker: number; name: string; voice: Voice }[];
   /** The words it reads: the transcript's or its translation. */
   language: "transcript" | "translation";
   /** dubKey of those words when it was made; a different key now means the words changed since. */

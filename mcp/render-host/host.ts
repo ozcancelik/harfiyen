@@ -4,13 +4,13 @@
 // finished MP4 goes back in chunks.
 
 import { settingsFor, withOverrides, type CaptionSettings, type PresetId } from "../../src/captions/style";
+import { addFontFile } from "../../src/captions/userFonts";
 import type { Word } from "../../src/engine";
 import { DEFAULT_KINETIC, type KineticSettings } from "../../src/render/kinetic";
 import type { DubMix } from "../../src/tts/dub";
 import type { Encode, FromRender, ToRender } from "../../src/worker/render.worker";
 
 export interface BurnJob {
-  name: string;
   words: Word[];
   /** The project's caption settings as the app saved them; missing: the preset's own. */
   settings?: Partial<CaptionSettings>;
@@ -22,6 +22,8 @@ export interface BurnJob {
   kinetic?: Partial<KineticSettings>;
   lang: string;
   speakers: string[] | null;
+  /** The caption font: the file is fetched from /__font and added the way the app adds one (checked for Turkish letters). */
+  font?: { name: string };
   /** The dub is fetched from /__dub; `original` is how loud the file's own sound stays under it. */
   dub?: { original: number };
   /** Fetch /__bands (the aura and the kinetic stage move with them) and /__loudness (voice emphasis). */
@@ -34,6 +36,8 @@ export interface BurnResult {
   size: number;
   elapsed: number;
   gpu: string;
+  /** Turkish letters the caption font does not have (they are drawn in a fallback font). */
+  fontMissing?: string;
 }
 
 interface HostBindings {
@@ -76,9 +80,25 @@ async function dubMix(original: number): Promise<DubMix> {
 
 const floats = async (path: string) => new Float32Array(await (await fetch(path)).arrayBuffer());
 
+/** Where the source video is kept while it is rendered: the browser's private disk, not memory. */
+const SOURCE = "harfiyen-source";
+
+/**
+ * The source video as a File that lives on disk. It is streamed in from the MCP's server into the private disk
+ * (OPFS), and the File handed to the worker reads from there a piece at a time, so a video of any length costs
+ * no more memory than a short one (a Blob made from the response would sit in memory whole).
+ */
+async function sourceFile(): Promise<File> {
+  const response = await fetch("/__source");
+  if (!response.ok || !response.body) throw new Error(`Kaynak video okunamadı (${response.status}).`);
+  const root = await navigator.storage.getDirectory();
+  const handle = await root.getFileHandle(SOURCE, { create: true });
+  await response.body.pipeTo(await handle.createWritable());
+  return handle.getFile();
+}
+
 window.burn = async (job) => {
-  const blob = await (await fetch("/__source")).blob();
-  const file = new File([blob], job.name, { type: blob.type || "video/mp4" });
+  const file = await sourceFile();
 
   const worker = new Worker(new URL("../../src/worker/render.worker.ts", import.meta.url), { type: "module" });
   const done = new Promise<{ file: File | null; size: number; elapsed: number }>((resolve, reject) => {
@@ -92,13 +112,14 @@ window.burn = async (job) => {
     worker.onerror = (e) => reject(new Error(e.message));
   });
 
+  const userFont = job.font ? await addFontFile(new File([await (await fetch("/__font")).arrayBuffer()], job.font.name)) : null;
   const msg: ToRender = {
     type: "burn",
     jobId: 1,
     file,
     words: job.words,
-    settings: settingsOf(job),
-    userFont: null,
+    settings: userFont ? withOverrides(settingsOf(job), { font: userFont.id }) : settingsOf(job),
+    userFont,
     bands: job.bands ? await floats("/__bands") : new Float32Array(0),
     loudness: job.loudness ? await floats("/__loudness") : new Float32Array(0),
     lang: job.lang,
@@ -111,8 +132,8 @@ window.burn = async (job) => {
     handle: null,
   };
   worker.postMessage(msg);
-  const result = await done;
-  worker.terminate();
+  const result = await done.finally(() => worker.terminate());
+  await navigator.storage.getDirectory().then((root) => root.removeEntry(SOURCE)).catch(() => {});
   if (!result.file) throw new Error("Çıktı dosyası gelmedi.");
 
   // 4 MB at a time so a long video never sits in one message.
@@ -123,5 +144,5 @@ window.burn = async (job) => {
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     await host.harfiyenChunk(btoa(bin));
   }
-  return { size: result.size, elapsed: result.elapsed, gpu: await gpuInfo() };
+  return { size: result.size, elapsed: result.elapsed, gpu: await gpuInfo(), ...(userFont?.missing && { fontMissing: userFont.missing }) };
 };

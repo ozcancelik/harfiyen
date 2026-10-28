@@ -98,6 +98,8 @@ export interface Inputs {
   dub?: Buffer;
   bands?: Float32Array;
   loudness?: Float32Array;
+  /** The caption font's file (TTF, OTF). */
+  font?: Buffer;
 }
 
 const bytes = (f: Float32Array) => Buffer.from(f.buffer, f.byteOffset, f.byteLength);
@@ -115,6 +117,7 @@ function serve(dir: string, inputs: Inputs): Promise<{ server: Server; url: stri
       return void createReadStream(inputs.source).pipe(res);
     }
     if (path === "/__dub") return send(inputs.dub);
+    if (path === "/__font") return send(inputs.font);
     if (path === "/__bands") return send(inputs.bands && bytes(inputs.bands));
     if (path === "/__loudness") return send(inputs.loudness && bytes(inputs.loudness));
     // The built page's files; never outside its folder.
