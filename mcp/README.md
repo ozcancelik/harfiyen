@@ -48,7 +48,7 @@ claude mcp add harfiyen -- node --import tsx /yol/harfiyen/mcp/src/server.ts
 | `tell_speakers`, `rename_speaker` | Kim ne zaman konuşuyor; adlar SRT, VTT ve videoda görünür |
 | `plan_jump_cut` | Kesilecek sessizlikleri ve dolgu seslerini listeler |
 | `render_captions` | Altyazıyı videoya yazar: stil, yazı tipi, sesle vurgula, jump cut, 9:16 / 4:5 / 1:1 / 16:9 kadraj ve seslendirme karıştırma |
-| `job_status` | `background: true` ile başlatılan işin durumu |
+| `job_status`, `cancel_job` | `background: true` ile başlatılan işlerin durumu ve çalışan işi (Chrome / ffmpeg süreciyle birlikte) durdurma |
 
 Uzun işler tek tek, sırayla çalışır (modeller belleği paylaşır) ve ilerleme bildirimi gönderir.
 

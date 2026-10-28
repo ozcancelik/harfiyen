@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import puppeteer from "puppeteer-core";
 import type { BurnJob, BurnResult } from "../render-host/host";
+import { CANCELLED, signal, throwIfCancelled } from "./jobs";
 import type { Progress } from "./pipeline";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -151,9 +152,11 @@ const STUCK_MS = 180_000;
  * whole: it is written beside it and moved in place at the end.
  */
 export async function renderInChrome(job: BurnJob, inputs: Inputs, output: string, progress: Progress): Promise<BurnResult> {
+  throwIfCancelled();
   const chrome = findChrome();
   if (!chrome) throw new Error(missingChrome());
   const dir = await builtPage(progress);
+  throwIfCancelled();
   const { server, url } = await serve(dir, inputs);
   const part = `${output}.part`;
   mkdirSync(dirname(output), { recursive: true });
@@ -169,8 +172,15 @@ export async function renderInChrome(job: BurnJob, inputs: Inputs, output: strin
       server.close();
       throw new Error(`Chrome açılamadı (${chrome}): ${e instanceof Error ? e.message : e}`);
     });
+  const sig = signal();
+  const onAbort = () => void browser.close().catch(() => {});
+  sig?.addEventListener("abort", onAbort, { once: true });
   let ok = false;
   try {
+    if (sig?.aborted) {
+      onAbort();
+      throw new Error(CANCELLED);
+    }
     const page = await browser.newPage();
     let last = Date.now();
     let shown = 0;
@@ -186,6 +196,7 @@ export async function renderInChrome(job: BurnJob, inputs: Inputs, output: strin
     });
     await page.goto(`${url}/${PAGE}`);
     await page.waitForFunction(() => typeof (window as unknown as { burn?: unknown }).burn === "function", { timeout: 60_000 }).catch(() => {
+      if (sig?.aborted) throw new Error(CANCELLED);
       throw new Error(`Video yazıcı sayfası açılmadı${pageError ? `: ${pageError}` : ""}.`);
     });
     const watchdog = setInterval(() => {
@@ -193,14 +204,17 @@ export async function renderInChrome(job: BurnJob, inputs: Inputs, output: strin
     }, 10_000);
     try {
       const result = (await page.evaluate((j) => window.burn(j), job as never)) as BurnResult;
+      if (sig?.aborted) throw new Error(CANCELLED);
       ok = true;
       return result;
     } catch (e) {
+      if (sig?.aborted) throw new Error(CANCELLED);
       throw new Error(`Chrome'da video yazılamadı: ${(e instanceof Error ? e.message : String(e)).replace(/^Error: /, "")}`);
     } finally {
       clearInterval(watchdog);
     }
   } finally {
+    sig?.removeEventListener("abort", onAbort);
     await new Promise<void>((done) => out.end(done));
     await browser.close().catch(() => {});
     server.close();

@@ -1,7 +1,7 @@
 // Captioned video with ffmpeg and libass. The web app draws its eleven styles on the GPU; here nine of them, without the glass and the
 // kinetic ones, are written as an ASS file and burned in, optionally with the jump cut and a crop to a social aspect ratio.
 
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Word } from "../../src/engine";
@@ -397,6 +397,8 @@ export async function renderCaptions(
   const ratio = o.aspect ? o.aspect.split(":").map(Number) : [size.w, size.h];
   const out = o.width ? { w: even(o.width), h: even((o.width * ratio[1]) / ratio[0]) } : size;
   const dir = mkdtempSync(join(tmpdir(), "harfiyen-"));
+  const part = `${o.output}.part`;
+  let ok = false;
   try {
     const ass = join(dir, "captions.ass");
     const fonts = join(dir, "fonts");
@@ -425,12 +427,15 @@ export async function renderCaptions(
     if (dub) args.push("-i", dubWavPath(t.id));
     args.push(...filterArgs, "-map", "[v]", "-map", mix ? "[am]" : "[ac]");
     args.push(...(o.codec === "hevc" ? ["-c:v", "libx265", "-tag:v", "hvc1"] : ["-c:v", "libx264"]));
-    args.push("-crf", String(o.crf), "-preset", "medium", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-t", length.toFixed(3));
+    args.push("-crf", String(o.crf), "-preset", "medium", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-t", length.toFixed(3), "-f", "mp4");
     mkdirSync(join(o.output, ".."), { recursive: true });
-    args.push(o.output);
+    args.push(part);
     await ffmpeg(args, (s) => progress(Math.min(1, s / length), "video yazılıyor"));
+    ok = true;
   } finally {
     rmSync(dir, { recursive: true, force: true });
+    if (ok) renameSync(part, o.output);
+    else rmSync(part, { force: true });
   }
   progress(1);
   return { output: o.output, seconds: length, cuts: cuts.length, size: `${out.w}x${out.h}`, dubbed: !!dub, notes };

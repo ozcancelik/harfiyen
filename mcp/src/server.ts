@@ -42,7 +42,7 @@ const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
 const fail = (e: unknown) => ({ isError: true, content: [{ type: "text" as const, text: e instanceof Error ? e.message : String(e) }] });
 const abs = (p: string) => resolve(p.replace(/^~(?=\/)/, process.env.HOME ?? "~"));
 
-type Extra = { _meta?: { progressToken?: string | number }; sendNotification: (n: never) => Promise<void> };
+type Extra = { _meta?: { progressToken?: string | number }; signal?: AbortSignal; sendNotification: (n: never) => Promise<void> };
 
 /** Runs heavy work as a job: waits for it, sending progress to the client, or hands back the job id. */
 async function heavy(tool: string, extra: Extra, background: boolean | undefined, work: (report: jobs.Report) => Promise<string>) {
@@ -56,8 +56,11 @@ async function heavy(tool: string, extra: Extra, background: boolean | undefined
       .sendNotification({ method: "notifications/progress", params: { progressToken: token, progress: Math.round(j.progress * 100), total: 100, message: j.message } } as never)
       .catch(() => {});
   });
-  if (background) return text(`İş başlatıldı: ${job.id}. İlerlemesi job_status ile sorulabilir.`);
-  const finished = await done;
+  if (background) return text(`İş başlatıldı: ${job.id}. İlerlemesi job_status ile sorulabilir, cancel_job ile durdurulabilir.`);
+  const onAbort = () => jobs.cancel(job.id);
+  extra.signal?.addEventListener("abort", onAbort, { once: true });
+  const finished = await done.finally(() => extra.signal?.removeEventListener("abort", onAbort));
+  if (finished.state === "cancelled") return fail(jobs.CANCELLED);
   return finished.state === "error" ? fail(finished.error) : text(finished.result ?? "");
 }
 
@@ -1218,12 +1221,33 @@ server.registerTool(
   "job_status",
   {
     title: "İş durumu",
-    description: "Arka planda başlatılan bir işin durumunu ve bittiyse sonucunu verir.",
-    inputSchema: { job_id: z.string() },
+    description: "Arka planda başlatılan bir işin durumunu ve bittiyse sonucunu verir. job_id verilmezse bütün işleri listeler.",
+    inputSchema: { job_id: z.string().optional() },
   },
   async (a) => {
+    if (!a.job_id) {
+      const all = jobs.list();
+      return text(all.length ? all.map(jobs.describe).join("\n") : "Kayıtlı iş yok.");
+    }
     const j = jobs.get(a.job_id);
     return j ? text(jobs.describe(j)) : fail(`"${a.job_id}" kimlikli iş yok (sunucu yeniden başlamış olabilir).`);
+  },
+);
+
+server.registerTool(
+  "cancel_job",
+  {
+    title: "İşi durdur",
+    description: "Çalışan ya da sırada bekleyen bir arka plan işini (transcribe, dub, render_captions vb.) ve varsa Chrome / ffmpeg sürecini durdurur. job_id verilmezse o an çalışan (yoksa sıradaki son) işi durdurur.",
+    inputSchema: { job_id: z.string().optional().describe("Durdurulacak işin kimliği (j1, j2...); verilmezse çalışan iş") },
+  },
+  async (a) => {
+    try {
+      const j = jobs.cancel(a.job_id);
+      return text(jobs.describe(j));
+    } catch (e) {
+      return fail(e);
+    }
   },
 );
 

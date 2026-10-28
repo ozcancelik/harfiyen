@@ -12,6 +12,7 @@ import { writeNumbers, type NumberMode } from "../../src/lib/numbers";
 import { BandTracker } from "../../src/render/aura";
 import { plainWord } from "../../src/punct/turkish";
 import { pcmChunks, probe } from "./audio";
+import { signal } from "./jobs";
 import type { Waveform } from "./project";
 import { formatter, speakerEmbedder, speechEngine, translator } from "./engines";
 import { SPEECH_MODELS, type ModelId, type MtPair } from "./models";
@@ -125,6 +126,7 @@ export async function tellSpeakers(t: Transcript, speakers: number | undefined, 
   const labels = await diarize(embedder, audio, start, words, {
     speakers,
     onProgress: (done) => progress(done, "sesler karşılaştırılıyor"),
+    isCancelled: () => !!signal()?.aborted,
   });
   if (!labels) throw new Error("İptal edildi.");
   progress(1);
