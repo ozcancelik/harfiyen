@@ -3,10 +3,12 @@
 // as JSON; the source video, the dub and the sound's levels are fetched from the MCP's local server, and the
 // finished MP4 goes back in chunks.
 
-import { settingsFor, withOverrides, type CaptionSettings, type PresetId } from "../../src/captions/style";
+import type { FontId, UserFont } from "../../src/captions/fonts";
+import { settingsFor, withOverrides, type CaptionSettings, type Corner, type PresetId } from "../../src/captions/style";
 import { addFontFile } from "../../src/captions/userFonts";
 import type { Word } from "../../src/engine";
 import { DEFAULT_KINETIC, type KineticSettings } from "../../src/render/kinetic";
+import type { LogoLayer } from "../../src/render/logoLayer";
 import type { DubMix } from "../../src/tts/dub";
 import type { Encode, FromRender, ToRender } from "../../src/worker/render.worker";
 
@@ -24,6 +26,10 @@ export interface BurnJob {
   speakers: string[] | null;
   /** The caption font: the file is fetched from /__font and added the way the app adds one (checked for Turkish letters). */
   font?: { name: string };
+  /** The corner logo, fetched from /__logo. */
+  logo?: { corner: Corner; size: number; opacity: number };
+  /** A background photo, fetched from /__photo, in place of the aura. */
+  photo?: boolean;
   /** The dub is fetched from /__dub; `original` is how loud the file's own sound stays under it. */
   dub?: { original: number };
   /** Fetch /__bands (the aura and the kinetic stage move with them) and /__loudness (voice emphasis). */
@@ -62,12 +68,47 @@ async function gpuInfo(): Promise<string> {
 }
 
 /** The settings the job asks for: the project's, another preset's, then what was set by hand. */
-function settingsOf(job: BurnJob): CaptionSettings {
+function settingsOf(job: BurnJob, userFont: UserFont | null): CaptionSettings {
   let s: CaptionSettings = job.settings ? { ...settingsFor(job.settings.preset ?? "karaoke"), ...job.settings } : settingsFor("karaoke");
   if (job.preset && job.preset !== s.preset) s = settingsFor(job.preset, s);
   if (job.patch) s = withOverrides(s, job.patch);
-  if (job.kinetic) s = { ...s, kinetic: { ...DEFAULT_KINETIC, ...s.kinetic, ...job.kinetic, on: true } };
+  if (userFont) s = withOverrides(s, { font: userFont.id });
+  const font: FontId | undefined = userFont?.id ?? job.patch?.font;
+  if (job.kinetic) {
+    s = { ...s, hidden: false, kinetic: { ...DEFAULT_KINETIC, ...s.kinetic, ...(font && { font }), ...job.kinetic, on: true } };
+  } else if (job.preset || job.patch?.hidden) {
+    // A caption preset or hidden text asked for turns off a kinetic stage the project came with.
+    s = { ...s, kinetic: { ...DEFAULT_KINETIC, ...s.kinetic, on: false } };
+  } else if (s.kinetic?.on && font) {
+    s = { ...s, kinetic: { ...s.kinetic, font } };
+  }
   return s;
+}
+
+/** An image from the local server as an ImageBitmap, scaled the way storedImage.ts does (SVGs included). */
+async function rasterise(path: string, raster: number, label: string): Promise<ImageBitmap> {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(`${label} okunamadı (${response.status}).`);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const w = img.naturalWidth || 512;
+    const h = img.naturalHeight || 512;
+    const svg = blob.type === "image/svg+xml";
+    const scale = svg ? raster / Math.max(w, h) : Math.min(1, raster / Math.max(w, h));
+    return await createImageBitmap(img, {
+      resizeWidth: Math.max(1, Math.round(w * scale)),
+      resizeHeight: Math.max(1, Math.round(h * scale)),
+      resizeQuality: "high",
+    });
+  } catch {
+    throw new Error(`${label} resim olarak açılamadı.`);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 /** The dub's PCM (16-bit mono, 48 kHz, from the file's start) as the worker's DubMix: one clip that covers all of it. */
@@ -113,25 +154,27 @@ window.burn = async (job) => {
   });
 
   const userFont = job.font ? await addFontFile(new File([await (await fetch("/__font")).arrayBuffer()], job.font.name)) : null;
+  const logo: LogoLayer | null = job.logo ? { ...job.logo, image: await rasterise("/__logo", 1024, "Logo") } : null;
+  const photo: ImageBitmap | null = job.photo ? await rasterise("/__photo", 3840, "Fotoğraf") : null;
   const msg: ToRender = {
     type: "burn",
     jobId: 1,
     file,
     words: job.words,
-    settings: userFont ? withOverrides(settingsOf(job), { font: userFont.id }) : settingsOf(job),
+    settings: settingsOf(job, userFont),
     userFont,
     bands: job.bands ? await floats("/__bands") : new Float32Array(0),
     loudness: job.loudness ? await floats("/__loudness") : new Float32Array(0),
     lang: job.lang,
     speakers: job.speakers,
     dub: job.dub ? await dubMix(job.dub.original) : null,
-    logo: null,
-    photo: null,
+    logo,
+    photo,
     encode: job.encode,
     // null: the worker writes to the browser's private disk and hands the file back.
     handle: null,
   };
-  worker.postMessage(msg);
+  worker.postMessage(msg, [...(logo ? [logo.image] : []), ...(photo ? [photo] : [])]);
   const result = await done.finally(() => worker.terminate());
   await navigator.storage.getDirectory().then((root) => root.removeEntry(SOURCE)).catch(() => {});
   if (!result.file) throw new Error("Çıktı dosyası gelmedi.");

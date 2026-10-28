@@ -115,6 +115,7 @@ server.registerTool(
       JSON.stringify(
         {
           ffmpeg: ok,
+          chrome: findChrome(),
           ...m,
           voices: Object.fromEntries((Object.keys(VOICE_INFO) as VoiceModel[]).map((v) => [v, { ...VOICE_INFO[v], installed: existsSync(join(modelDir(VOICE_INFO[v].dir), "model.json")) }])),
           fonts: BUNDLED.map((f) => f.family),
@@ -544,7 +545,7 @@ server.registerTool(
   {
     title: "Altyazılı video",
     description:
-      "Altyazıyı videoya yazar (ffmpeg + libass). Transkript web uygulamasının .harfiyen projesinden geldiyse (import_project) projenin altyazı stili, yazı tipi, renkleri, boyutu, kadrajı (kırpma kutusu ya da sığdırma, bulanık zemin) ve boşluk kesme ayarı varsayılan olarak kullanılır; verilen parametreler bunun üstüne yazar, use_project=false projeyi yok sayar. Stiller: klasik (koyu kutu), sade (gölgeli), karaoke (söylenen kelime renkle dolar), akis (kelimeler söylendikçe yerinde belirir), odak (bulanıktan netleşir), vurgu (söylenen kelime renkli işaretleyici), pop (ortada 3 iri zıplayan kelime), netles (ortada tek iri kelime bulanıktan netleşir), tek-kelime (ortada tek iri kelime). Yalnızca ses dosyasında koyu bir zemin kullanılır. Video varsayılan olarak uygulamanın kendi çizim koduyla, kurulu Chrome'da yazılır: cam stili, aura ve kinetik tipografi (preset=cam, kinetic, picture=aura, aura, aura_style) yalnızca böyle çizilir. Chrome yoksa ffmpeg kullanılır ve cevapta not düşülür (cam, aura ve kinetik istendiyse hata verilir). Chrome yolunda size uygulamanın boyudur (kısa kenarın payı), bold yoktur, logo ve arka plan fotoğrafı henüz yok.",
+      "Altyazıyı videoya yazar. Transkript web uygulamasının .harfiyen projesinden geldiyse (import_project) projenin altyazı stili, yazı tipi, renkleri, boyutu, kadrajı (kırpma kutusu ya da sığdırma, bulanık zemin) ve boşluk kesme ayarı varsayılan olarak kullanılır; verilen parametreler bunun üstüne yazar, use_project=false projeyi yok sayar. Stiller: klasik (koyu kutu), sade (gölgeli), karaoke (söylenen kelime renkle dolar), akis (kelimeler söylendikçe yerinde belirir), odak (bulanıktan netleşir), vurgu (söylenen kelime renkli işaretleyici), pop (ortada 3 iri zıplayan kelime), netles (ortada tek iri kelime bulanıktan netleşir), tek-kelime (ortada tek iri kelime). Video varsayılan olarak uygulamanın kendi çizim koduyla, kurulu Chrome'da yazılır: cam stili, aura, kinetik tipografi, bulanık görüntü, arka plan fotoğrafı ve logo (preset=cam, text_background=glass, kinetic, picture=aura/blur, aura, aura_style, photo_file, logo_file) yalnızca böyle çizilir. Chrome yoksa ffmpeg kullanılır ve cevapta not düşülür (yalnızca Chrome'da olanlar istendiyse hata verilir). Chrome yolunda size uygulamanın boyudur (kısa kenarın payı), bold yoktur.",
     inputSchema: {
       id: z.string(),
       output: z.string().describe("Yazılacak .mp4 dosyasının yolu"),
@@ -552,11 +553,19 @@ server.registerTool(
       style: z.enum(["klasik", "sade", "karaoke", "akis", "odak", "vurgu", "pop", "netles", "tek-kelime"]).optional(),
       engine: z.enum(["auto", "ffmpeg", "chrome"]).default("auto").describe("auto: Chrome kuruluysa uygulamanın kendi çizimiyle (Chrome), değilse ffmpeg; chrome: Chrome şart (yoksa hata); ffmpeg: Chrome'a hiç gitme"),
       preset: z.enum(["klasik", "karaoke", "dolgu", "akis", "odak", "vurgu", "pop", "tek", "netles", "sade", "cam"]).optional().describe("Uygulamanın altyazı stili (Chrome ile yazılır); cam yalnızca burada var"),
+      hidden: z.boolean().optional().describe("true: ekrana altyazı ya da kinetik yazı çizmez (yalnızca seslendirme, aura, fotoğraf, logo ya da boşluk kesme için)"),
       kinetic: z.enum(["dugum", "pano", "fizik", "kamera", "poster", "darbe", "maske", "tunel"]).optional().describe("Altyazı yerine tam ekran kinetik tipografi (Chrome ile yazılır)"),
       kinetic_palette: z.enum(["gece", "neon", "krem", "mercan", "firuze"]).optional(),
-      picture: z.enum(["video", "aura"]).optional().describe("aura: videonun görüntüsü yerine sesle hareket eden aura (Chrome ile yazılır; çıkış 1080p ya da kadrajın şekli)"),
+      kinetic_backdrop: z.enum(["stage", "aura"]).optional().describe("Kinetik sahnenin zemini (görüntü yokken): stage paletin kendi düz zemini, aura sesle hareket eden aura"),
+      picture: z.enum(["video", "blur", "aura"]).optional().describe("video: görüntüyü olduğu gibi koru; blur: görüntüyü bulanık ve koyu çiz (yazı her görüntüde okunur); aura: videonun görüntüsü yerine sesle hareket eden aura (Chrome ile yazılır; çıkış 1080p ya da kadrajın şekli)"),
       aura: z.enum(["cini", "gunbatimi", "orman", "lavanta", "gece"]).optional().describe("Aura paleti"),
       aura_style: z.enum(["aura", "halo", "spektrum", "kure", "akis"]).optional().describe("Aura görünümü: spektrum Ufuk, akis Sırtlar"),
+      photo_file: z.string().optional().describe("Ses dosyasında ya da görüntüsü gizlenen videoda aura yerine kullanılacak arka plan fotoğrafı (JPEG, PNG, WebP ya da SVG; Chrome ile yazılır)"),
+      photo_blur: z.boolean().optional().describe("Arka plan fotoğrafını bulanık ve koyu çiz; yazı her fotoğrafta okunur"),
+      logo_file: z.string().optional().describe("Bir köşede gösterilecek logo resmi (PNG, SVG, WebP ya da JPEG; Chrome ile yazılır)"),
+      logo_corner: z.enum(["tl", "tr", "bl", "br"]).optional().describe("Logonun köşesi: tl sol üst, tr sağ üst (varsayılan), bl sol alt, br sağ alt"),
+      logo_size: z.number().min(0.05).max(0.35).optional().describe("Logonun uzun kenarı, karenin kısa kenarının payı (varsayılan 0,14)"),
+      logo_opacity: z.number().min(0.1).max(1).optional().describe("Logonun görünürlüğü, 0,1–1 (1: tam, varsayılan)"),
       emphasis: z.boolean().optional().describe("Sesle vurgula: çevresinden yüksek sesle söylenen kelimeler büyük (ve çoğu stilde vurgu renginde) yazılır"),
       language: Language,
       dub: z.boolean().optional().describe("Seslendirmeyi (dub aracı) karıştır; verilmezse varsa karıştırılır, false ile hiç karıştırılmaz"),
@@ -566,12 +575,12 @@ server.registerTool(
         .string()
         .optional()
         .describe(`Paketli yazı tiplerinden biri (${BUNDLED.map((f) => f.family).join(", ")}) ya da sistemde kurulu bir yazı tipi adı`),
-      font_file: z.string().optional().describe("Kendi yazı tipin (TTF ya da OTF); verilirse font yerine bu kullanılır"),
+      font_file: z.string().optional().describe("Kendi yazı tipin (TTF ya da OTF; Chrome yolunda WOFF ve WOFF2 de olur); verilirse font yerine bu kullanılır"),
       bold: z.boolean().optional().describe("Kalın; verilmezse yazı tipine göre (Anton, Bangers gibi tek kalınlıklılarda kapalı)"),
       uppercase: z.boolean().optional().describe("Türkçe kurala uygun büyük harf (i → İ); verilmezse yazı tipine göre (Luckiest Guy, Bangers, Bebas Neue yalnızca büyük harf bildiği için açık)"),
       size: z.number().min(0.02).max(0.15).optional().describe("Yazı boyu, kare yüksekliğinin payı; büyük stiller (pop, tek-kelime, netles) bunu ayrıca büyütür. Chrome yolunda uygulamanın boyudur: kısa kenarın payı, stilin kendi boyu hazır"),
       position: z.enum(["alt", "orta", "ust"]).optional().describe("Verilmezse stile göre: tek kelimelik stiller ortada, diğerleri altta"),
-      text_background: z.enum(["box", "outline", "shadow"]).optional().describe("Yazının zemini: koyu kutu, kontur ya da gölge"),
+      text_background: z.enum(["box", "outline", "shadow", "glass"]).optional().describe("Yazının zemini: koyu kutu, kontur, gölge ya da buzlu cam (glass yalnızca Chrome ile çizilir)"),
       color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
       accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Vurgu rengi (karaoke dolgusu, vurgu kutusu)"),
       speaker_names: z.boolean().optional().describe("Konuşan değişince adı yazılsın (varsayılan: proje ne diyorsa, yoksa açık)"),
@@ -608,6 +617,8 @@ server.registerTool(
           : a.jump_cut === true || look.jumpCut
             ? { gap: a.gap ?? look.jumpCut?.gap, pad: a.pad ?? look.jumpCut?.pad, fillers: a.fillers ?? look.jumpCut?.fillers }
             : undefined;
+      // Asking for a caption or kinetic style turns captions back on when the project had them hidden.
+      const hidden = a.hidden ?? (a.style !== undefined || a.preset !== undefined || a.kinetic !== undefined ? false : look.hidden);
       const opts: RenderOptions = {
         output: abs(a.output),
         captions: {
@@ -617,10 +628,11 @@ server.registerTool(
           uppercase: a.uppercase ?? look.captions.uppercase,
           ...size,
           position: a.position ?? fromProject.position,
-          background: a.text_background ?? fromProject.background,
+          background: a.text_background === "glass" ? "box" : (a.text_background ?? fromProject.background),
           color: a.color ?? look.captions.color ?? DEFAULT_CAPTIONS.color,
           accent: a.accent ?? look.captions.accent ?? DEFAULT_CAPTIONS.accent,
         },
+        hidden,
         emphasis: a.emphasis ?? look.emphasis ?? false,
         speakerNames: a.speaker_names ?? look.speakerNames,
         fontFile: a.font_file ? abs(a.font_file) : undefined,
@@ -639,21 +651,59 @@ server.registerTool(
       };
 
       // The app's own renderer (Chrome) draws every look as the app does; ffmpeg is the stand-in when there is no Chrome.
-      const asked = [a.preset, a.kinetic, a.kinetic_palette, a.picture === "aura" || undefined, a.aura, a.aura_style].some((x) => x !== undefined);
+      const asked = [
+        a.preset,
+        a.text_background === "glass" || undefined,
+        a.kinetic,
+        a.kinetic_palette,
+        a.kinetic_backdrop,
+        a.picture === "aura" || a.picture === "blur" || undefined,
+        a.aura,
+        a.aura_style,
+        a.photo_file,
+        a.photo_blur,
+        a.logo_file,
+        a.logo_corner,
+        a.logo_size,
+        a.logo_opacity,
+      ].some((x) => x !== undefined);
       const chrome = a.engine === "ffmpeg" ? null : findChrome();
       if (!chrome && (a.engine === "chrome" || asked)) throw new Error(missingChrome());
       const standIn = !chrome && a.engine === "auto" ? "Chrome bulunamadı; altyazı ffmpeg ile yazıldı, uygulamadakinden farklı çizilebilir (konuşmacı adı gibi). Chrome kurulursa uygulamanın kendi çizimi kullanılır." : "";
 
       const early: string[] = standIn ? [standIn] : [];
+      if (look.missingFont && !a.font_file && !a.font && !hidden) {
+        early.push("Projede kendi yüklediğin bir yazı tipi var; dosyası projede olmadığı için varsayılan yazı tipi kullanıldı (font_file ile verilebilir).");
+      }
+      if (look.logo?.on && !a.logo_file) {
+        early.push("Projede logo açık; dosyası projede olmadığı için kullanılmadı (logo_file ile verilebilir).");
+      }
+      if (look.photo && !a.photo_file && a.picture === undefined) {
+        early.push("Projede arka plan fotoğrafı var; dosyası projede olmadığı için kullanılmadı (photo_file ile verilebilir).");
+      }
+      if (!a.logo_file && (a.logo_corner !== undefined || a.logo_size !== undefined || a.logo_opacity !== undefined)) {
+        early.push("logo_corner, logo_size ve logo_opacity için logo_file da verilmeli.");
+      }
+      if (!a.photo_file && a.photo_blur !== undefined) {
+        early.push("photo_blur için photo_file da verilmeli.");
+      }
       let r: { output: string; seconds: number; cuts: number; size: string; dubbed: boolean; notes: string[] };
       let drawnBy = "";
       if (chrome) {
         const family = a.font_file ? undefined : (a.font ?? undefined);
         const fontId = family ? fontIdOf(family) : undefined;
+        const preset = a.preset ?? (a.style ? STYLE_PRESET[a.style] : look.settings ? undefined : "sade");
+        const projectKinetic = !preset && !hidden && (look.settings as { kinetic?: { on?: boolean } } | undefined)?.kinetic?.on === true;
+        // A palette or backdrop alone changes the project's kinetic stage; it does not turn one on.
+        const kineticPatch = { ...(a.kinetic_palette && { palette: a.kinetic_palette }), ...(a.kinetic_backdrop && { backdrop: a.kinetic_backdrop }) };
+        const kinetic = a.kinetic ? { style: a.kinetic, ...kineticPatch } : projectKinetic && Object.keys(kineticPatch).length ? kineticPatch : undefined;
+        if (!kinetic && Object.keys(kineticPatch).length) {
+          early.push("kinetic_palette ve kinetic_backdrop yalnızca kinetik tipografi açıkken (kinetic parametresi ya da projede) kullanılır.");
+        }
         const c: ChromeStyle = {
           settings: a.use_project ? look.settings : undefined,
           // No style asked for and no project: sade, the look this tool has always started from.
-          preset: a.preset ?? (a.style ? STYLE_PRESET[a.style] : look.settings ? undefined : "sade"),
+          preset,
           patch: {
             ...(fontId && { font: fontId }),
             ...(a.size !== undefined && { size: a.size }),
@@ -666,13 +716,20 @@ server.registerTool(
             ...(a.aura && { aura: a.aura }),
             ...(a.aura_style && { auraStyle: a.aura_style }),
           },
-          kinetic: a.kinetic ? { style: a.kinetic, ...(a.kinetic_palette && { palette: a.kinetic_palette }) } : undefined,
+          kinetic,
           picture: a.picture,
           fontFile: a.font_file ? abs(a.font_file) : undefined,
+          logo: a.logo_file
+            ? {
+                file: abs(a.logo_file),
+                corner: a.logo_corner ?? look.logo?.corner ?? "tr",
+                size: a.logo_size ?? look.logo?.size ?? 0.14,
+                opacity: a.logo_opacity ?? look.logo?.opacity ?? 1,
+              }
+            : undefined,
+          photo: a.photo_file ? { file: abs(a.photo_file), blur: a.photo_blur ?? look.photoBlur } : undefined,
         };
         if (a.bold !== undefined) early.push("bold Chrome yolunda yok; kalınlığı uygulama yazı tipine göre kendisi seçer.");
-        // A palette alone changes the project's kinetic stage; it does not turn one on.
-        if (!c.kinetic && a.kinetic_palette && (look.settings as { kinetic?: { on?: boolean } } | undefined)?.kinetic?.on) c.kinetic = { palette: a.kinetic_palette };
         const done = await renderChrome(t, opts, c, report);
         r = done;
         drawnBy = `\nUygulamanın kendi çizimiyle yazıldı (Chrome, ${done.gpu}).`;
@@ -681,7 +738,7 @@ server.registerTool(
         r = await renderCaptions(t, opts, report);
       }
       const given = [
-        a.style === undefined && !chrome && look.used.style,
+        a.style === undefined && a.hidden === undefined && !chrome && look.used.style,
         ownCrop && a.fit === undefined && look.used.crop,
         a.jump_cut === undefined && look.used.jumpCut,
       ].filter(Boolean);

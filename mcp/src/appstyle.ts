@@ -3,14 +3,21 @@
 // it, without it the nearest ffmpeg look is used and the note says what is missing. What neither draws is in `notes`,
 // never dropped silently.
 
+import type { Corner, LogoSettings } from "../../src/captions/style";
 import type { JumpCut } from "../../src/lib/cuts";
 import type { Aspect, CaptionOptions, CaptionStyle } from "./captions";
 
 export interface Look {
   style?: CaptionStyle;
   captions: Partial<CaptionOptions>;
+  hidden?: boolean;
   emphasis?: boolean;
   speakerNames?: boolean;
+  logo?: Partial<LogoSettings> & { on: boolean };
+  photo?: boolean;
+  photoBlur?: boolean;
+  /** The project uses a font the user added from a file, which is not inside the project file. */
+  missingFont?: boolean;
   aspect?: Aspect;
   fit?: "fill" | "fit";
   backdrop?: "black" | "blur";
@@ -65,6 +72,8 @@ const num = (x: unknown): x is number => typeof x === "number" && Number.isFinit
 const obj = (x: unknown): Record<string, unknown> | undefined => (x && typeof x === "object" ? (x as Record<string, unknown>) : undefined);
 const hex = (x: unknown) => (typeof x === "string" && /^#[0-9a-f]{6}$/i.test(x) ? x : undefined);
 
+const CORNERS = new Set<Corner>(["tl", "tr", "bl", "br"]);
+
 export function lookOf(app: Record<string, unknown> | undefined): Look {
   const look: Look = { captions: {}, chromeOnly: [], notes: [], used: {} };
   const s = obj(app?.settings);
@@ -75,10 +84,12 @@ export function lookOf(app: Record<string, unknown> | undefined): Look {
       look.used.style = `stil ${s.preset}${s.preset === PRESETS[s.preset] ? "" : ` → ${look.style}`}`;
       if (s.preset === "cam") look.chromeOnly.push({ why: "cam stili", note: "Cam stili çizilemedi (Chrome gerekir); koyu kutulu klasik stil kullanıldı." });
     }
+    const k = obj(s.kinetic);
     if (typeof s.font === "string") {
       if (s.font in FONTS) look.captions.font = FONTS[s.font];
-      else look.notes.push("Projede kendi yüklediğin bir yazı tipi var; dosyası projede olmadığı için varsayılan yazı tipi kullanıldı (font_file ile verilebilir).");
+      else if (k?.on !== true) look.missingFont = true;
     }
+    if (k?.on === true && typeof k.font === "string" && !(k.font in FONTS)) look.missingFont = true;
     // The app's size is a share of the frame's shorter side, and already the style's own size.
     if (num(s.size)) Object.assign(look.captions, { size: s.size, sizeBasis: "short" });
     if (s.position === "bottom" || s.position === "middle" || s.position === "top") {
@@ -89,15 +100,33 @@ export function lookOf(app: Record<string, unknown> | undefined): Look {
     // False leaves it to the font: capitals-only fonts need the Turkish upper-casing either way.
     if (s.uppercase === true) look.captions.uppercase = true;
     if (s.background === "box" || s.background === "outline" || s.background === "shadow") look.captions.background = s.background;
-    else if (s.background === "glass") look.captions.background = "box";
+    else if (s.background === "glass") {
+      look.captions.background = "box";
+      if (s.preset !== "cam") look.chromeOnly.push({ why: "buzlu cam zemin", note: "Buzlu cam zemin çizilemedi (Chrome gerekir); koyu kutu kullanıldı." });
+    }
     if (typeof s.voiceEmphasis === "boolean") look.emphasis = s.voiceEmphasis;
     if (typeof s.speakerNames === "boolean") look.speakerNames = s.speakerNames;
-    if (obj(s.kinetic)?.on === true) look.chromeOnly.push({ why: "kinetik tipografi", note: "Projede kinetik tipografi açık; Chrome olmadan çizilemez, altyazı stiliyle yazıldı." });
-    if (s.hidden === true) look.notes.push("Projede altyazı gizli işaretli (yalnızca seslendirmeli video); altyazı yine de yazıldı.");
+    if (k?.on === true) look.chromeOnly.push({ why: "kinetik tipografi", note: "Projede kinetik tipografi açık; Chrome olmadan çizilemez, altyazı stiliyle yazıldı." });
+    if (s.hidden === true) {
+      look.hidden = true;
+      look.used.style = "yazısız";
+    }
     if (s.picture === "hidden" || s.picture === "blur") {
       look.chromeOnly.push({ why: "gizli ya da bulanık görüntü", note: "Projede görüntü gizli ya da bulanık; Chrome olmadan görüntü olduğu gibi kullanıldı." });
     }
-    if (s.photo === true) look.notes.push("Projede arka plan fotoğrafı var; kullanılmıyor.");
+    const l = obj(s.logo);
+    if (l) {
+      look.logo = {
+        on: l.on === true,
+        corner: typeof l.corner === "string" && CORNERS.has(l.corner as Corner) ? (l.corner as Corner) : undefined,
+        size: num(l.size) ? l.size : undefined,
+        opacity: num(l.opacity) ? l.opacity : undefined,
+      };
+    }
+    if (s.photo === true) {
+      look.photo = true;
+      look.photoBlur = s.photoBlur === true;
+    }
   }
 
   const c = obj(app?.crop);

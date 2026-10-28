@@ -3,7 +3,8 @@
 // as in captions.ts; the worker does the drawing, the sound mix and the encoding.
 
 import { readFileSync } from "node:fs";
-import { basename } from "node:path";
+import { basename, extname } from "node:path";
+import type { Corner } from "../../src/captions/style";
 import type { Word } from "../../src/engine";
 import { cropFor, framing, RATIO, type Crop } from "../../src/lib/crop";
 import { keptLength, keptParts } from "../../src/lib/cuts";
@@ -12,7 +13,7 @@ import type { Encode } from "../../src/worker/render.worker";
 import type { BurnJob } from "../render-host/host";
 import { probe, type MediaInfo } from "./audio";
 import { dubFor, type RenderOptions } from "./captions";
-import { renderInChrome, type Inputs } from "./chrome";
+import { renderInChrome, type ImageInput, type Inputs } from "./chrome";
 import { dubWavPath } from "./dub";
 import { planCuts, waveformOf, type Progress } from "./pipeline";
 import type { Transcript } from "./transcript";
@@ -26,11 +27,31 @@ export interface ChromeStyle {
   /** Settings asked for by hand, in the app's field names. */
   patch: Record<string, unknown>;
   /** Kinetic typography in place of the captions; missing keeps the captions (or the project's kinetic). */
-  kinetic?: { style?: string; palette?: string };
-  /** "aura": the aura in place of the video's picture. */
-  picture?: "video" | "aura";
-  /** A TTF or OTF file to draw the captions with. */
+  kinetic?: { style?: string; palette?: string; backdrop?: "stage" | "aura" };
+  /** "video" keeps the picture, "blur" blurs and darkens it, "aura" replaces it with the aura. */
+  picture?: "video" | "blur" | "aura";
+  /** A TTF, OTF, WOFF or WOFF2 file to draw the captions with. */
   fontFile?: string;
+  /** Corner logo image and its placement. */
+  logo?: { file: string; corner: Corner; size: number; opacity: number };
+  /** Background photo in place of the aura, and whether to blur and darken it. */
+  photo?: { file: string; blur?: boolean };
+}
+
+const IMAGE_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".webp": "image/webp",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+};
+
+function readImage(file: string, maxBytes: number, tooBig: string, badExt: string): ImageInput {
+  const type = IMAGE_TYPES[extname(file).toLowerCase()];
+  if (!type) throw new Error(badExt);
+  const bytes = readFileSync(file);
+  if (bytes.length > maxBytes) throw new Error(tooBig);
+  return { bytes, type };
 }
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
@@ -94,16 +115,51 @@ export async function renderChrome(
   const parts = keptParts(span, cuts);
   if (!parts.length) throw new Error("Kesimlerden sonra videoda bir şey kalmıyor.");
 
-  // A sound file, or a video used for its sound, is drawn as an audio project is: on the aura (or the kinetic stage).
-  const noPicture = !info.hasVideo || c.picture === "aura" || (c.settings as { picture?: string } | undefined)?.picture === "hidden";
-  const patch: Record<string, unknown> = { ...c.patch, ...(noPicture && { picture: "hidden" }), ...(o.emphasis && { voiceEmphasis: true }) };
-  const kineticOn = !!c.kinetic || (c.settings as { kinetic?: { on?: boolean } } | undefined)?.kinetic?.on === true;
+  // A sound file, or a video used for its sound, is drawn as an audio project is: on the aura, the photo or the kinetic stage.
+  const wantNoPicture =
+    c.picture === "aura" ||
+    !!c.photo ||
+    (c.picture === undefined && (!!c.kinetic?.backdrop || !!c.patch.aura || !!c.patch.auraStyle));
+  const noPicture =
+    !info.hasVideo ||
+    wantNoPicture ||
+    (c.picture === undefined && (c.settings as { picture?: string } | undefined)?.picture === "hidden");
+  const patch: Record<string, unknown> = {
+    ...c.patch,
+    ...(noPicture ? { picture: "hidden" } : c.picture && { picture: c.picture }),
+    ...(c.photo ? { photo: true, ...(c.photo.blur !== undefined && { photoBlur: c.photo.blur }) } : { photo: false }),
+    ...(o.hidden !== undefined && { hidden: o.hidden }),
+    ...(o.emphasis && { voiceEmphasis: true }),
+  };
+  const projectKinetic = !c.preset && !o.hidden && (c.settings as { kinetic?: { on?: boolean } } | undefined)?.kinetic?.on === true;
+  const kineticOn = !!c.kinetic || projectKinetic;
+  // On the aura or a photo, the kinetic stage must not draw its own dark ground over it unless "stage" was asked for.
+  const wantAuraBackdrop = !c.kinetic?.backdrop && (c.picture === "aura" || !!c.photo || !!c.patch.aura || !!c.patch.auraStyle);
+  const kinetic =
+    c.kinetic || (projectKinetic && wantAuraBackdrop ? {} : undefined);
+  const jobKinetic = kinetic ? { ...kinetic, ...(wantAuraBackdrop && { backdrop: "aura" as const }) } : undefined;
   // The aura and the kinetic stage move with the voice; "Sesle vurgula" needs the loudness (not with captions timed to a voice).
-  const loud = !!(patch.voiceEmphasis ?? (c.settings as { voiceEmphasis?: boolean } | undefined)?.voiceEmphasis) && !heard.followed;
+  const loud = !o.hidden && !!(patch.voiceEmphasis ?? (c.settings as { voiceEmphasis?: boolean } | undefined)?.voiceEmphasis) && !heard.followed;
   if (heard.followed && o.emphasis) notes.push("Sesle vurgula seslendirmeye hizalı altyazıda kullanılmadı: kelimelerin zamanı sesten gelmiyor.");
-  const wantBands = noPicture || kineticOn;
+  const wantBands = kineticOn || (noPicture && !c.photo);
 
   const inputs: Inputs = { source: t.source };
+  if (c.logo) {
+    inputs.logo = readImage(
+      c.logo.file,
+      10 * 1024 * 1024,
+      "Logo dosyası çok büyük (10 MB üstü).",
+      "Logo resmi PNG, SVG, WebP ya da JPEG olmalı.",
+    );
+  }
+  if (c.photo) {
+    inputs.photo = readImage(
+      c.photo.file,
+      25 * 1024 * 1024,
+      "Fotoğraf çok büyük (25 MB üstü).",
+      "Fotoğraf JPEG, PNG, WebP ya da SVG olmalı.",
+    );
+  }
   if (wantBands || loud) {
     const wave = await waveformOf(t.source, t.duration, (s) => progress(s * 0.15, "ses okunuyor"));
     inputs.bands = wave.bands;
@@ -122,8 +178,9 @@ export async function renderChrome(
     preset: c.preset as BurnJob["preset"],
     patch: patch as BurnJob["patch"],
     font: c.fontFile ? { name: basename(c.fontFile) } : undefined,
-    // On the aura, the kinetic stage must not draw its own ground over it.
-    kinetic: (c.picture === "aura" && c.kinetic ? { ...c.kinetic, backdrop: "aura" } : c.kinetic) as BurnJob["kinetic"],
+    logo: c.logo ? { corner: c.logo.corner, size: c.logo.size, opacity: c.logo.opacity } : undefined,
+    photo: !!c.photo,
+    kinetic: jobKinetic as BurnJob["kinetic"],
     lang: o.language === "translation" ? (t.lang === "tr" ? "en" : "tr") : t.lang,
     speakers: names,
     dub: dub ? { original: Math.min(0.5, Math.max(0, o.original ?? 0)) } : undefined,

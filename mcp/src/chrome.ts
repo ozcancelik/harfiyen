@@ -91,6 +91,12 @@ const TYPES: Record<string, string> = {
   ".svg": "image/svg+xml",
 };
 
+/** An image file served with its MIME type so the browser's Image() decodes SVGs as well. */
+export interface ImageInput {
+  bytes: Buffer;
+  type: string;
+}
+
 /** What the page fetches besides its own files. */
 export interface Inputs {
   source: string;
@@ -98,8 +104,10 @@ export interface Inputs {
   dub?: Buffer;
   bands?: Float32Array;
   loudness?: Float32Array;
-  /** The caption font's file (TTF, OTF). */
+  /** The caption font's file (TTF, OTF, WOFF, WOFF2). */
   font?: Buffer;
+  logo?: ImageInput;
+  photo?: ImageInput;
 }
 
 const bytes = (f: Float32Array) => Buffer.from(f.buffer, f.byteOffset, f.byteLength);
@@ -108,9 +116,9 @@ const bytes = (f: Float32Array) => Buffer.from(f.buffer, f.byteOffset, f.byteLen
 function serve(dir: string, inputs: Inputs): Promise<{ server: Server; url: string }> {
   const server = createServer((req, res) => {
     const path = decodeURIComponent((req.url ?? "/").split("?")[0]);
-    const send = (body: Buffer | undefined) => {
+    const send = (body: Buffer | undefined, type = "application/octet-stream") => {
       if (!body) return void res.writeHead(404).end();
-      res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": body.length }).end(body);
+      res.writeHead(200, { "Content-Type": type, "Content-Length": body.length }).end(body);
     };
     if (path === "/__source") {
       res.writeHead(200, { "Content-Type": "video/mp4", "Content-Length": statSync(inputs.source).size });
@@ -118,6 +126,8 @@ function serve(dir: string, inputs: Inputs): Promise<{ server: Server; url: stri
     }
     if (path === "/__dub") return send(inputs.dub);
     if (path === "/__font") return send(inputs.font);
+    if (path === "/__logo") return send(inputs.logo?.bytes, inputs.logo?.type);
+    if (path === "/__photo") return send(inputs.photo?.bytes, inputs.photo?.type);
     if (path === "/__bands") return send(inputs.bands && bytes(inputs.bands));
     if (path === "/__loudness") return send(inputs.loudness && bytes(inputs.loudness));
     // The built page's files; never outside its folder.

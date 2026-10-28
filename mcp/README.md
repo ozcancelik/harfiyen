@@ -65,15 +65,15 @@ yazı tipleri). Chrome yalnızca video yazmak için gerekir; yazıya döküm, ç
 
 - `engine: auto` (varsayılan): Chrome kuruluysa Chrome, değilse ffmpeg ve libass; cevapta ffmpeg'in uygulamadan farklı çizebileceği not edilir.
 - `engine: chrome`: Chrome şart, yoksa hata. `engine: ffmpeg`: Chrome'a hiç gitmez.
-- `preset: cam`, `kinetic`, `picture: aura`, `aura`, `aura_style` yalnızca Chrome ile çizilir; Chrome yoksa hata verir.
+- `preset: cam`, `text_background: glass`, `kinetic`, `kinetic_backdrop`, `picture: aura` / `blur`, `aura`, `aura_style`, `photo_file`, `logo_file` yalnızca Chrome ile çizilir; Chrome yoksa hata verir.
 - Stil, proje ve `preset` verilmediyse `sade` ile başlanır (ffmpeg yolundaki varsayılanla aynı). Projedeki ayarlar olduğu gibi kullanılır.
 
-Kadraj, seslendirme (`original_volume`), boşluk kesme, `crf`, `width` ve `font_file` iki yolda da çalışır. Kaynak video sayfaya
+Kadraj, seslendirme (`original_volume`), boşluk kesme, `hidden` (yazısız video), `crf`, `width` ve `font_file` iki yolda da çalışır. Kaynak video sayfaya
 belleğe değil tarayıcının özel diskine (OPFS) akıtılır, uzun videolar bellek tutmaz; seslendirme sesi ise bütün olarak
 belleğe alınır (saatlik bir videoda yaklaşık 1 GB). İlk kullanımda `../src` ve `render-host/` Vite ile derlenip
 `~/.harfiyen-mcp/render-host` altına konur (birkaç saniye); kod değişince kendiliğinden yeniden derlenir. Chrome'un yolu
 `CHROME` ile verilebilir. Şimdilik yalnızca macOS'ta denendi. Chrome yolunda `size` uygulamanın boyudur (kısa kenarın
-payı); `bold`, logo ve arka plan fotoğrafı yoktur. Google Chrome H.264 kodlayıcısını içerir; bazı Chromium sürümleri içermez.
+payı), `bold` yoktur (uygulama kalınlığı yazı tipine göre kendisi seçer). Google Chrome H.264 kodlayıcısını içerir; bazı Chromium sürümleri içermez.
 
 ## Altyazı stilleri ve yazı tipleri
 
@@ -103,13 +103,14 @@ parametreler üstüne yazar, `use_project: false` projeyi yok sayar.
 | Stil | klasik, karaoke, akış, odak, vurgu, pop, netleş, sade, tek kelime birebir; dolgu → karaoke; cam → klasik (not düşülür) |
 | Yazı tipi, boyut, konum, renkler, büyük harf | aynen (boyut karenin kısa kenarına göre, uygulamadaki gibi) |
 | Zemin (kutu / kontur / gölge) | aynen; cam → kutu |
-| Sesle vurgula, konuşmacı adı | aynen |
+| Sesle vurgula, konuşmacı adı, gizli altyazı | aynen |
 | Kadraj | kırpma kutusu (köşe ve boyutuyla), ya da sığdır ve siyah / bulanık zemin |
 | Boşluk kesme | açıksa aynı ayarlarla |
 
-Chrome varsa cam stili, kinetik tipografi ve gizli ya da bulanık görüntü projedeki gibi çizilir. Çizilemeyenler cevapta
-"Not:" olarak bildirilir: projeye özel yüklenmiş yazı tipi (dosyası projede yok; `font_file` verilir), gizli altyazı,
-arka plan fotoğrafı, logo; Chrome yoksa ayrıca cam stili, kinetik tipografi ve gizli ya da bulanık görüntü.
+Chrome varsa cam stili, kinetik tipografi ve gizli ya da bulanık görüntü projedeki gibi çizilir. Projede dosya olarak
+saklanmayanlar (özel yüklenmiş yazı tipi, arka plan fotoğrafı, logo) `font_file`, `photo_file` ya da `logo_file`
+verilmediyse cevapta "Not:" olarak bildirilir; verildiyse projenin köşe/boyut/saydamlık ve fotoğraf bulanıklığı ayarları
+varsayılan alınır. Chrome yoksa ayrıca cam stili, kinetik tipografi ve gizli ya da bulanık görüntü not edilir.
 Style değiştirirsen projenin o stile ait boyutu, konumu ve zemini kullanılmaz (pop'un boyutu sade'de anlamsız olurdu).
 
 ## Seslendirme

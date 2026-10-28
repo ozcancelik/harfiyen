@@ -232,6 +232,8 @@ export interface RenderOptions {
   cropBox?: { x: number; y: number; w: number; h: number };
   /** Names of the speakers above their lines; false leaves them out. */
   speakerNames?: boolean;
+  /** Leave captions out of the video (a dub-only or jump-cut video). */
+  hidden?: boolean;
   /** Takes quiet stretches out of the video. */
   jumpCut?: Partial<JumpCut>;
   /** "Sesle vurgula": words said louder than their surroundings are drawn bigger. */
@@ -324,9 +326,11 @@ function graph(parts: Kept[], hasVideo: boolean, g: Geometry, out: { w: number; 
     }
   }
   if (out.w !== size.w) shape.push(`scale=${out.w}:${out.h}`);
-  const quote = (p: string) => p.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
-  shape.push(`ass='${quote(ass)}':fontsdir='${quote(fonts)}'`);
-  pieces.push(`${from}${shape.join(",")}[v]`);
+  if (!o.hidden) {
+    const quote = (p: string) => p.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
+    shape.push(`ass='${quote(ass)}':fontsdir='${quote(fonts)}'`);
+  }
+  pieces.push(`${from}${shape.length ? shape.join(",") : "null"}[v]`);
   return pieces.join(";");
 }
 
@@ -392,19 +396,21 @@ export async function renderCaptions(
   const dir = mkdtempSync(join(tmpdir(), "harfiyen-"));
   try {
     const ass = join(dir, "captions.ass");
-    const font = resolveFont(o.captions.font, o.fontFile, o.captions.bold);
     const fonts = join(dir, "fonts");
-    mkdirSync(fonts);
-    prepareFontsDir(fonts, o.fontFile);
-    const style = { ...o.captions, font: font.family, bold: font.bold, uppercase: o.captions.uppercase ?? font.caps };
-    // The loud words are picked in file time, then carried through the jump cut as a flag.
-    let marked: CaptionWord[] = words;
-    if (o.emphasis && !followed) {
-      progress(0, "vurgulanacak kelimeler aranıyor");
-      const loud = loudWords(words, await loudnessOf(t.source, span.end));
-      marked = words.map((x) => (loud.has(x) ? { ...x, loud: true as const } : x));
+    if (!o.hidden) {
+      const font = resolveFont(o.captions.font, o.fontFile, o.captions.bold);
+      mkdirSync(fonts);
+      prepareFontsDir(fonts, o.fontFile);
+      const style = { ...o.captions, font: font.family, bold: font.bold, uppercase: o.captions.uppercase ?? font.caps };
+      // The loud words are picked in file time, then carried through the jump cut as a flag.
+      let marked: CaptionWord[] = words;
+      if (o.emphasis && !followed) {
+        progress(0, "vurgulanacak kelimeler aranıyor");
+        const loud = loudWords(words, await loudnessOf(t.source, span.end));
+        marked = words.map((x) => (loud.has(x) ? { ...x, loud: true as const } : x));
+      }
+      writeFileSync(ass, toAss(wordsThrough(marked, span, cuts) as CaptionWord[], o.speakerNames === false ? undefined : t.speakers?.names, out.w, out.h, style));
     }
-    writeFileSync(ass, toAss(wordsThrough(marked, span, cuts) as CaptionWord[], o.speakerNames === false ? undefined : t.speakers?.names, out.w, out.h, style));
     const mix = dub ? { index: info.hasVideo ? 1 : 2, original: Math.min(0.5, Math.max(0, o.original ?? 0)) } : undefined;
     const filter = graph(parts, info.hasVideo, g, out, o, ass, fonts, mix);
     const script = join(dir, "graph.txt");
