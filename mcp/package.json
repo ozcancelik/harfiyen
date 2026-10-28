@@ -1,0 +1,16 @@
+{
+  "name": "harfiyen-mcp",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "description": "Harfiyen'in motorlarını MCP aracı olarak sunar: yazıya döküm, çeviri, konuşmacı ayırma, altyazılı video.",
+  "scripts": {
+    "start": "node --import tsx src/server.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0",
+    "zod": "^3.25.0"
+  }
+}
