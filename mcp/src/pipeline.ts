@@ -144,11 +144,12 @@ export async function loudnessOf(file: string, end?: number): Promise<Float32Arr
 }
 
 /** The stretches the jump cut would take out of the transcript's span, in file time. */
-export async function planCuts(t: Transcript, jc: Partial<JumpCut>) {
+/** `keep`: sound that must stay as well (the dub's lines). */
+export async function planCuts(t: Transcript, jc: Partial<JumpCut>, keep: { start: number; end: number }[] = []) {
   if (!t.source) throw new Error("Boşluk kesmek için transkriptin bir ses ya da video dosyası olmalı.");
   const span = t.range ?? { start: 0, end: t.duration };
   const loudness = await loudnessOf(t.source, span.end);
-  return findCuts(t.words, span, { ...DEFAULT_JUMP_CUT, ...jc, on: true }, loudness);
+  return findCuts(t.words, span, { ...DEFAULT_JUMP_CUT, ...jc, on: true }, loudness, keep);
 }
 
 /** Peak amplitude per this many seconds, as the app's waveform (src/worker/protocol.ts). */

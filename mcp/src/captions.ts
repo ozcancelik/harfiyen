@@ -1,7 +1,7 @@
 // Captioned video with ffmpeg and libass. The web app draws its eleven styles on the GPU; here nine of them, without the glass and the
 // kinetic ones, are written as an ASS file and burned in, optionally with the jump cut and a crop to a social aspect ratio.
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Word } from "../../src/engine";
@@ -10,6 +10,7 @@ import { keptLength, keptParts, wordsThrough, type Kept } from "../../src/lib/cu
 import { loudWords } from "../../src/captions/emphasis";
 import { labelWords } from "../../src/lib/speakers";
 import { ffmpeg, probe } from "./audio";
+import { dubKey, dubWavPath, loadDub, timeToDub } from "./dub";
 import { prepareFontsDir, resolveFont } from "./fonts";
 import { loudnessOf, planCuts, type Progress } from "./pipeline";
 import type { Transcript } from "./transcript";
@@ -239,6 +240,12 @@ export interface RenderOptions {
   fontFile?: string;
   /** The transcript's words, or its translation. */
   language: "transcript" | "translation";
+  /** The transcript's dub (the dub tool): false leaves it out; missing mixes it in when there is one. */
+  dub?: boolean;
+  /** How loud the file's own sound stays under the dub, 0 to 0.5. */
+  original?: number;
+  /** Captions in the dub's language take their times from the voice, as in the app; false keeps the words' own. */
+  followDub?: boolean;
   codec: "h264" | "hevc";
   /** Constant rate factor: lower is better. */
   crf: number;
@@ -274,7 +281,8 @@ function geometry(srcW: number, srcH: number, o: RenderOptions): Geometry {
 }
 
 /** Filter graph pieces: the kept parts joined, then the picture shaped, then captions. */
-function graph(parts: Kept[], hasVideo: boolean, g: Geometry, out: { w: number; h: number }, o: RenderOptions, ass: string, fonts: string) {
+/** `mix`: the dub is input `index`; the file's own sound stays at `original` (0 to 1) under it. */
+function graph(parts: Kept[], hasVideo: boolean, g: Geometry, out: { w: number; h: number }, o: RenderOptions, ass: string, fonts: string, mix?: { index: number; original: number }) {
   const { size } = g;
   const pieces: string[] = [];
   const joined: string[] = [];
@@ -286,8 +294,15 @@ function graph(parts: Kept[], hasVideo: boolean, g: Geometry, out: { w: number; 
     }
     pieces.push(`[0:a]atrim=${t},asetpts=PTS-STARTPTS[a${i}]`);
     joined.push(`[a${i}]`);
+    if (mix) pieces.push(`[${mix.index}:a]atrim=${t},asetpts=PTS-STARTPTS[d${i}]`);
   });
   pieces.push(`${joined.join("")}concat=n=${parts.length}:v=${hasVideo ? 1 : 0}:a=1${hasVideo ? "[vc]" : ""}[ac]`);
+  if (mix) {
+    pieces.push(`${parts.map((_, i) => `[d${i}]`).join("")}concat=n=${parts.length}:v=0:a=1[dc]`);
+    // At 0 the file's sound is gone; above it, it stays under the voice.
+    if (mix.original > 0) pieces.push(`[ac]volume=${mix.original.toFixed(3)}[ao]`, `[ao][dc]amix=inputs=2:duration=longest:normalize=0[am]`);
+    else pieces.push(`[ac]anullsink`, `[dc]anull[am]`);
+  }
   let from = hasVideo ? "[vc]" : "[1:v]";
   const shape: string[] = [];
   if (hasVideo && g.crop) {
@@ -315,7 +330,11 @@ function graph(parts: Kept[], hasVideo: boolean, g: Geometry, out: { w: number; 
   return pieces.join(";");
 }
 
-export async function renderCaptions(t: Transcript, o: RenderOptions, progress: Progress): Promise<{ output: string; seconds: number; cuts: number; size: string }> {
+export async function renderCaptions(
+  t: Transcript,
+  o: RenderOptions,
+  progress: Progress,
+): Promise<{ output: string; seconds: number; cuts: number; size: string; dubbed: boolean; notes: string[] }> {
   if (!t.source) throw new Error("Video için transkriptin bir ses ya da video dosyası olmalı.");
   const info = await probe(t.source);
   if (!info.hasAudio) throw new Error("Bu dosyada ses kanalı yok.");
@@ -327,8 +346,25 @@ export async function renderCaptions(t: Transcript, o: RenderOptions, progress: 
   }
   words = labelWords(words, t.speakers);
 
+  // The dub: mixed in, and the captions in its language follow its voice.
+  const notes: string[] = [];
+  const dub = o.dub === false || !existsSync(dubWavPath(t.id)) ? null : loadDub(t.id);
+  let followed = false;
+  if (dub) {
+    const read = dub.language === "translation" ? t.translation?.words : t.words;
+    if (!read || dubKey(read) !== dub.key) {
+      notes.push("Seslendirme eski: metin ya da çeviri sonradan değişti. Altyazı seslendirmenin zamanını izlemedi; dub yeniden çalıştırılmalı.");
+    } else if (o.followDub !== false && dub.language === o.language) {
+      words = timeToDub(words, dub.lines, dub.clips);
+      followed = true;
+    }
+  }
+  if (followed && o.emphasis) notes.push("Sesle vurgula seslendirmeye hizalı altyazıda kullanılmadı: kelimelerin zamanı sesten gelmiyor.");
+
   progress(0, "kesimler aranıyor");
-  const cuts = o.jumpCut ? await planCuts(t, o.jumpCut) : [];
+  // What the dub says is not cut out, as in the app.
+  const keep = dub ? dub.clips.map((c) => ({ start: c.start, end: c.start + c.seconds })) : [];
+  const cuts = o.jumpCut ? await planCuts(t, o.jumpCut, keep) : [];
   const parts = keptParts(span, cuts);
   if (!parts.length) throw new Error("Kesimlerden sonra videoda bir şey kalmıyor.");
   const length = keptLength(parts);
@@ -349,20 +385,22 @@ export async function renderCaptions(t: Transcript, o: RenderOptions, progress: 
     const style = { ...o.captions, font: font.family, bold: font.bold, uppercase: o.captions.uppercase ?? font.caps };
     // The loud words are picked in file time, then carried through the jump cut as a flag.
     let marked: CaptionWord[] = words;
-    if (o.emphasis) {
+    if (o.emphasis && !followed) {
       progress(0, "vurgulanacak kelimeler aranıyor");
       const loud = loudWords(words, await loudnessOf(t.source, span.end));
       marked = words.map((x) => (loud.has(x) ? { ...x, loud: true as const } : x));
     }
     writeFileSync(ass, toAss(wordsThrough(marked, span, cuts) as CaptionWord[], o.speakerNames === false ? undefined : t.speakers?.names, out.w, out.h, style));
-    const filter = graph(parts, info.hasVideo, g, out, o, ass, fonts);
+    const mix = dub ? { index: info.hasVideo ? 1 : 2, original: Math.min(0.5, Math.max(0, o.original ?? 0)) } : undefined;
+    const filter = graph(parts, info.hasVideo, g, out, o, ass, fonts, mix);
     const script = join(dir, "graph.txt");
     // A jump cut is a filter per part: long graphs go in a file, not on the command line.
     const filterArgs = filter.length > 20_000 ? (writeFileSync(script, filter), ["-/filter_complex", script]) : ["-filter_complex", filter];
     const args = ["-i", t.source];
     // A sound file gets a plain dark picture.
     if (!info.hasVideo) args.push("-f", "lavfi", "-i", `color=c=0x101418:s=${out.w}x${out.h}:r=30:d=${length.toFixed(3)}`);
-    args.push(...filterArgs, "-map", "[v]", "-map", "[ac]");
+    if (dub) args.push("-i", dubWavPath(t.id));
+    args.push(...filterArgs, "-map", "[v]", "-map", mix ? "[am]" : "[ac]");
     args.push(...(o.codec === "hevc" ? ["-c:v", "libx265", "-tag:v", "hvc1"] : ["-c:v", "libx264"]));
     args.push("-crf", String(o.crf), "-preset", "medium", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-t", length.toFixed(3));
     mkdirSync(join(o.output, ".."), { recursive: true });
@@ -372,5 +410,5 @@ export async function renderCaptions(t: Transcript, o: RenderOptions, progress: 
     rmSync(dir, { recursive: true, force: true });
   }
   progress(1);
-  return { output: o.output, seconds: length, cuts: cuts.length, size: `${out.w}x${out.h}` };
+  return { output: o.output, seconds: length, cuts: cuts.length, size: `${out.w}x${out.h}`, dubbed: !!dub, notes };
 }

@@ -1,7 +1,7 @@
 // Harfiyen as an MCP server over stdio. Audio and video stay on this computer, as in the web app.
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { basename, dirname, extname, resolve } from "node:path";
+import { copyFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -20,8 +20,10 @@ import { sourceKey } from "../../src/lib/translation";
 import { renderCaptions, DEFAULT_CAPTIONS } from "./captions";
 import * as jobs from "./jobs";
 import { lookOf } from "./appstyle";
+import { dubBySentence, dubKey, dubLines, dubWavPath, loadDub, placeLines, saveDub, speak, timeToDub, wordsFromText, writeDubWav, type DubMeta } from "./dub";
 import { BUNDLED } from "./fonts";
-import { installed, SPEECH_MODELS } from "./models";
+import { installed, modelDir, SPEECH_MODELS } from "./models";
+import { fitVoice, speaker, VOICE_INFO, type Voice, type VoiceLang, type VoiceModel } from "./voices";
 import { METHODS, planCuts, punctuate, tellSpeakers, transcribe, translate, waveformOf } from "./pipeline";
 import { PROJECT_EXT, readProject, writeProject } from "./project";
 import { probe } from "./audio";
@@ -107,7 +109,19 @@ server.registerTool(
   async () => {
     const ok = await probe("/dev/null").then(() => true, (e: Error) => !/çalıştırılamadı/.test(e.message));
     const m = installed();
-    return text(JSON.stringify({ ffmpeg: ok, ...m, fonts: BUNDLED.map((f) => f.family), transcripts: store.list().length }, null, 2));
+    return text(
+      JSON.stringify(
+        {
+          ffmpeg: ok,
+          ...m,
+          voices: Object.fromEntries((Object.keys(VOICE_INFO) as VoiceModel[]).map((v) => [v, { ...VOICE_INFO[v], installed: existsSync(join(modelDir(VOICE_INFO[v].dir), "model.json")) }])),
+          fonts: BUNDLED.map((f) => f.family),
+          transcripts: store.list().length,
+        },
+        null,
+        2,
+      ),
+    );
   },
 );
 
@@ -523,6 +537,9 @@ server.registerTool(
       style: z.enum(["klasik", "sade", "karaoke", "akis", "odak", "vurgu", "pop", "netles", "tek-kelime"]).optional(),
       emphasis: z.boolean().optional().describe("Sesle vurgula: çevresinden yüksek sesle söylenen kelimeler büyük (ve çoğu stilde vurgu renginde) yazılır"),
       language: Language,
+      dub: z.boolean().optional().describe("Seslendirmeyi (dub aracı) karıştır; verilmezse varsa karıştırılır, false ile hiç karıştırılmaz"),
+      original_volume: z.number().min(0).max(0.5).default(0).describe("Seslendirmenin altında dosyanın kendi sesi, 0–0,5 (0: hiç duyulmaz, uygulamadaki gibi)"),
+      follow_dub: z.boolean().optional().describe("Seslendirmeyle aynı dildeki altyazı sesin zamanını izler (varsayılan açık)"),
       font: z
         .string()
         .optional()
@@ -593,6 +610,9 @@ server.registerTool(
           cropBox: ownCrop && fit === "fill" ? look.cropBox : undefined,
           jumpCut,
           language: a.language,
+          dub: a.dub,
+          original: a.original_volume,
+          followDub: a.follow_dub,
           codec: a.codec,
           crf: a.crf,
           width: a.width,
@@ -606,7 +626,9 @@ server.registerTool(
       ].filter(Boolean);
       const used = given.length ? `\nProjeden: ${given.join(", ")}` : "";
       const notes = look.notes.map((n) => `\nNot: ${n}`).join("");
-      return `Yazıldı: ${r.output}\n${r.size}, ${r.seconds.toFixed(1)} sn${r.cuts ? `, ${r.cuts} kesim` : ""}${used}${notes}`;
+      const dubbed = r.dubbed ? `\nSeslendirme karıştırıldı (orijinal ses %${Math.round(a.original_volume * 100)}).` : "";
+      const more = r.notes.map((n) => `\nNot: ${n}`).join("");
+      return `Yazıldı: ${r.output}\n${r.size}, ${r.seconds.toFixed(1)} sn${r.cuts ? `, ${r.cuts} kesim` : ""}${used}${dubbed}${notes}${more}`;
     }),
 );
 
@@ -802,6 +824,146 @@ server.registerTool(
     const h = store.history(a.id);
     return text(h.length ? h.map((x, i) => `${i + 1}. ${x.label}  (${x.at.slice(0, 19).replace("T", " ")})`).join("\n") : "Geri alınacak bir düzenleme yok.");
   },
+);
+
+const VoiceShape = {
+  voice: z.enum(["ema", "mini", "ahenk", "supertonic"]).default("ema").describe("Ses modeli: ema (EMA Lightning, varsayılan), mini (Antalia Mini), ahenk (Ahenk Cep: rakamları en iyi okuyan, biraz yavaş), supertonic (Türkçe ve İngilizce, 10 ses). İngilizce okuma her zaman Supertonic'tir."),
+  style: z.enum(["M1", "M2", "M3", "M4", "M5", "F1", "F2", "F3", "F4", "F5"]).default("M3").describe("Yalnızca Supertonic'in sesi: M erkek, F kadın"),
+  pitch: z.number().min(-4).max(4).default(0).describe("Ses tonu, yarım ton adımlarla; negatif daha kalın. Supertonic'te yok"),
+  seed: z.number().int().min(0).default(0).describe("Aynı sesi farklı bir vurguyla okutur"),
+};
+
+/** The voice a tool asked for, moved to Supertonic where the language needs it. */
+function voiceOf(a: { voice: VoiceModel; style: string; pitch: number; seed: number }, lang: VoiceLang) {
+  const asked: Voice = { lang, model: a.voice, style: a.style, pitch: a.pitch, seed: a.seed };
+  const voice = fitVoice(asked);
+  const note = voice.model !== asked.model ? `\nNot: ${lang === "en" ? "İngilizceyi" : "Bu dili"} yalnızca Supertonic okur; ses Supertonic'e çevrildi.` : "";
+  return { voice, note };
+}
+
+server.registerTool(
+  "dub",
+  {
+    title: "Seslendir",
+    description:
+      "Transkripti (ya da çevirisini) yapay bir sesle okuyup her satırı kendi zamanında yerleştirir. Yerine sığmayan satır 1,35 kata kadar hızlı okunur, taşan son satırlar öncekilerin sessizliğine kayar. Sonuç kaydedilir: render_captions seslendirmeyi videoya karıştırır, altyazıyı sesin zamanına uydurur; export_dub WAV olarak verir. Türkçe videoya İngilizce voice-over için önce translate, sonra language=translation. Supertonic dışındaki sesler hızlıdır; Supertonic gerçek zamanın birkaç katı hızında çalışır.",
+    inputSchema: { id: z.string(), language: Language, ...VoiceShape, background: Background },
+  },
+  (a, extra) =>
+    heavy("dub", extra as unknown as Extra, a.background, async (report) => {
+      const t = store.load(a.id);
+      const tr = a.language === "translation";
+      if (tr && !t.translation) throw new Error("Bu transkriptin çevirisi yok; önce translate çalıştırılmalı.");
+      const words = tr ? t.translation!.words : t.words;
+      const lang = tr ? t.translation!.lang : t.lang;
+      if (!words.length) throw new Error("Okunacak metin yok.");
+      const { voice, note } = voiceOf(a, lang);
+      const lines = dubLines(words, dubBySentence(lang, t.lang));
+      const end = t.range?.end ?? t.duration;
+      const started = Date.now();
+      const { clips, overflow } = await placeLines(lines, t.duration, end, voice, report);
+      const meta: DubMeta = {
+        voice,
+        language: a.language,
+        key: dubKey(words),
+        duration: t.duration,
+        end,
+        lines,
+        clips: clips.map((c) => ({ line: c.line, start: c.start, seconds: c.audio.length / 48000 })),
+        overflow,
+        elapsed: (Date.now() - started) / 1000,
+      };
+      saveDub(t.id, meta, clips);
+      const spoken = meta.clips.reduce((n, c) => n + c.seconds, 0);
+      const warn = overflow ? `\nUyarı: ${overflow.start.toFixed(1)}. saniyedeki son cümle sığmıyor, ${overflow.seconds.toFixed(1)} sn taşıyor; cümle kısaltılabilir.` : "";
+      return `Seslendirildi: ${meta.clips.length}/${lines.length} satır, ${spoken.toFixed(1)} sn ses (${VOICE_INFO[voice.model].name}${voice.model === "supertonic" ? ` ${voice.style}` : ""}), ${meta.elapsed.toFixed(1)} sn sürdü.${warn}${note}`;
+    }),
+);
+
+server.registerTool(
+  "export_dub",
+  {
+    title: "Seslendirmeyi WAV yaz",
+    description: "dub ile yapılmış seslendirmeyi (orijinal ses karışmadan) 16 bit, 48 kHz, mono WAV dosyası olarak yazar.",
+    inputSchema: { id: z.string(), output: z.string().describe("Yazılacak .wav dosyasının yolu") },
+  },
+  async (a) => {
+    try {
+      store.load(a.id);
+      if (!loadDub(a.id) || !existsSync(dubWavPath(a.id))) throw new Error("Bu transkriptin seslendirmesi yok; önce dub çalıştırılmalı.");
+      const out = abs(a.output);
+      mkdirSync(dirname(out), { recursive: true });
+      copyFileSync(dubWavPath(a.id), out);
+      return text(`Yazıldı: ${out}`);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "preview_voice",
+  {
+    title: "Sesi dinle",
+    description: "Bir sesin kısa bir örneğini WAV dosyası olarak yazar; seslendirmeden önce ses, ton ve seed seçmek için. Metin verilmezse örnek bir cümle okunur.",
+    inputSchema: {
+      output: z.string().describe("Yazılacak .wav dosyasının yolu"),
+      text: z.string().optional(),
+      lang: z.enum(["tr", "en"]).default("tr"),
+      ...VoiceShape,
+      background: Background,
+    },
+  },
+  (a, extra) =>
+    heavy("preview_voice", extra as unknown as Extra, a.background, async (report) => {
+      const { voice, note } = voiceOf(a, a.lang);
+      const sample = a.text?.trim() || (a.lang === "en" ? "Hello, the dub will be read in this voice." : "Merhaba, seslendirme bu sesle yapılacak.");
+      report(0, "ses yükleniyor");
+      const audio = await speak(await speaker(voice.model), sample, voice);
+      const out = abs(a.output);
+      writeDubWav(out, [{ line: 0, start: 0, audio }], 0);
+      return `Yazıldı: ${out} (${(audio.length / 48000).toFixed(1)} sn)${note}`;
+    }),
+);
+
+server.registerTool(
+  "speak_text",
+  {
+    title: "Metin seslendir",
+    description:
+      "Dosya olmadan, yazılan ya da yapıştırılan metni yapay sesle okur. Her cümle ya da satır ayrı okunur; kelimeler sesin zamanıyla bir transkripte yerleşir (ses WAV dosyası o transkriptin medyası olur). Çıkan transkriptle render_captions koyu zeminli, seslendirmeli altyazılı bir video yapar. output verilirse WAV ayrıca oraya yazılır.",
+    inputSchema: {
+      text: z.string().min(1),
+      lang: z.enum(["tr", "en"]).default("tr"),
+      name: z.string().optional(),
+      output: z.string().optional().describe("WAV'ın ayrıca yazılacağı yol"),
+      ...VoiceShape,
+      background: Background,
+    },
+  },
+  (a, extra) =>
+    heavy("speak_text", extra as unknown as Extra, a.background, async (report) => {
+      const { voice, note } = voiceOf(a, a.lang);
+      const words = wordsFromText(a.text);
+      if (!words.length) throw new Error("Okunacak metin yok.");
+      const lines = dubLines(words, dubBySentence(a.lang, a.lang));
+      // No media clock: lines follow one another.
+      const { clips } = await placeLines(lines, 0, 0, voice, report);
+      const timed = timeToDub(words, lines, clips.map((c) => ({ line: c.line, start: c.start, seconds: c.audio.length / 48000 })));
+      const last = clips.at(-1);
+      const duration = last ? last.start + last.audio.length / 48000 : 0;
+      const t = store.create({ name: a.name ?? a.text.trim().slice(0, 40), duration, lang: a.lang, words: timed, model: VOICE_INFO[voice.model].name });
+      const wav = join(dirname(dubWavPath(t.id)), `${t.id}.speech.wav`);
+      writeDubWav(wav, clips, duration);
+      t.source = wav;
+      store.save(t);
+      if (a.output) {
+        const out = abs(a.output);
+        mkdirSync(dirname(out), { recursive: true });
+        copyFileSync(wav, out);
+      }
+      return `${summary(t)}\n${duration.toFixed(1)} sn ses: ${wav}${a.output ? `\nAyrıca yazıldı: ${abs(a.output)}` : ""}${note}`;
+    }),
 );
 
 server.registerTool(

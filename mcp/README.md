@@ -38,12 +38,13 @@ claude mcp add harfiyen -- node --import tsx /yol/harfiyen/mcp/src/server.ts
 | `edit_translation` | Çeviriyi düzeltme (`find_replace` de `language: translation` ile çeviride çalışır) |
 | `assign_speaker`, `merge_speakers`, `rename_speaker` | Konuşmacıyı elle düzeltme: bir satırı başkasına verme, iki kişiyi birleştirme, adlandırma |
 | `punctuate`, `apply_numbers` | Metni düzelttikten sonra noktalamayı ve sayı yazımını yeniden uygulama |
+| `dub`, `export_dub`, `speak_text`, `preview_voice` | Seslendirme: transkripti yapay sesle okuyup satırları kendi zamanına yerleştirme, WAV'a yazma, dosyasız metin seslendirme, ses önizleme |
 | `undo`, `history` | Son 20 düzenlemeyi geri alma; kelimeler, zamanlar, çeviri ve konuşmacılar birlikte döner |
 | `align_text` | Doğru metni (şarkı sözü, konuşma metni) dökümün zamanlarına hizalar |
 | `translate` | TR ↔ EN, cümle cümle |
 | `tell_speakers`, `rename_speaker` | Kim ne zaman konuşuyor; adlar SRT, VTT ve videoda görünür |
 | `plan_jump_cut` | Kesilecek sessizlikleri ve dolgu seslerini listeler |
-| `render_captions` | Altyazıyı videoya yazar: stil, yazı tipi, sesle vurgula, jump cut ve 9:16 / 4:5 / 1:1 / 16:9 kadraj |
+| `render_captions` | Altyazıyı videoya yazar: stil, yazı tipi, sesle vurgula, jump cut, 9:16 / 4:5 / 1:1 / 16:9 kadraj ve seslendirme karıştırma |
 | `job_status` | `background: true` ile başlatılan işin durumu |
 
 Uzun işler tek tek, sırayla çalışır (modeller belleği paylaşır) ve ilerleme bildirimi gönderir.
@@ -52,7 +53,7 @@ Uzun işler tek tek, sırayla çalışır (modeller belleği paylaşır) ve iler
 
 - Her şey işlemcide çalışır. Seda ve Duyu hızlıdır; Whisper Turbo gerçek zamandan uzun sürebilir.
 - Altyazı stilleri web uygulamasındakinin yakın bir taklididir, birebir aynı görünmez.
-- Canlı mikrofon ve seslendirme henüz yok.
+- Canlı mikrofon yok.
 
 ## Altyazı stilleri ve yazı tipleri
 
@@ -89,3 +90,21 @@ parametreler üstüne yazar, `use_project: false` projeyi yok sayar.
 Burada çizilemeyenler cevapta "Not:" olarak bildirilir: cam stili, kinetik tipografi, projeye özel yüklenmiş yazı tipi
 (dosyası projede yok; `font_file` verilir), gizli altyazı, gizli ya da bulanık görüntü, arka plan fotoğrafı.
 Style değiştirirsen projenin o stile ait boyutu, konumu ve zemini kullanılmaz (pop'un boyutu sade'de anlamsız olurdu).
+
+## Seslendirme
+
+Web uygulamasının dört sesi CPU'da çalışır: EMA Lightning (varsayılan), Antalia Mini, Ahenk Cep ve Supertonic 3
+(Türkçe ve İngilizce, 10 ses). Hızları yaklaşık olarak gerçek zamanın EMA'da 29, Antalia'da 25, Ahenk'te 16, Supertonic'te
+5 katıdır. İngilizce okuma her zaman Supertonic'tir.
+
+- `dub`: transkripti ya da çevirisini (`language: translation`) okur. Her satır kendi zamanında başlar; yerine sığmayan
+  satır en fazla 1,35 kat (Supertonic'te 1,15) hızlı okunur, taşan son satırlar öncekilerin sessizliğine kayar, hâlâ
+  sığmayan için uyarı verilir. Türkçe videoya İngilizce voice-over: `translate`, sonra `dub` ile `language: translation`.
+- `render_captions` seslendirmeyi varsa karıştırır (`original_volume` 0–0,5, uygulamadaki gibi varsayılan 0: dosyanın
+  kendi sesi duyulmaz). Seslendirmeyle aynı dildeki altyazı sesin zamanını izler (`follow_dub`); jump cut okunan
+  cümlelerin altını kesmez. Metin ya da çeviri `dub`dan sonra değişirse seslendirme "eski" sayılır, altyazı sesi
+  izlemez ve cevapta not düşülür.
+- `speak_text`: dosya olmadan metin okur; kelimeler sesin zamanıyla bir transkripte yerleşir ve ses o transkriptin
+  medyası olur. `render_captions` bundan koyu zeminli, seslendirmeli, altyazılı bir video yapar.
+- Yerleştirme kuralları uygulamanın `tts.worker.ts` ve `useDubber.ts` dosyalarından taşındı (`src/dub.ts`); iki yerde
+  aynı sayılar tutulmalı. Uygulamanın seslendirmesi tarayıcıda saklanır, `.harfiyen` dosyasında yoktur; MCP'ye alınamaz.
