@@ -76,6 +76,7 @@ interface Snapshot {
   words: Word[];
   speakers?: Speakers;
   translation?: Translation;
+  range?: { start: number; end: number };
 }
 
 const MAX_UNDO = 20;
@@ -92,7 +93,7 @@ function readStack(id: string): Snapshot[] {
 /** Keeps the transcript as it is now, before an edit named `label`. */
 export function checkpoint(t: Transcript, label: string) {
   const stack = readStack(t.id);
-  stack.push({ label, at: new Date().toISOString(), words: t.words, speakers: t.speakers, translation: t.translation });
+  stack.push({ label, at: new Date().toISOString(), words: t.words, speakers: t.speakers, translation: t.translation, range: t.range });
   mkdirSync(dir, { recursive: true });
   writeFileSync(undoPath(t.id), JSON.stringify(stack.slice(-MAX_UNDO)));
 }
@@ -109,6 +110,7 @@ export function undo(id: string, steps = 1): string[] {
   t.words = back.words;
   t.speakers = back.speakers;
   t.translation = back.translation;
+  t.range = back.range;
   save(t);
   writeFileSync(undoPath(id), JSON.stringify(stack));
   return taken.map((x) => x.label).reverse();

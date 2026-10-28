@@ -34,6 +34,7 @@ claude mcp add harfiyen -- node --import tsx /yol/harfiyen/mcp/src/server.ts
 | `transcribe` | Ses ya da videoyu kelime zamanlı yazıya döker (Seda, Duyu, Whisper), noktalama ve sayı yazımıyla |
 | `import_subtitles` | SRT / VTT'yi transkript olarak açar |
 | `import_project`, `export_project`, `set_source` | Web uygulamasının `.harfiyen` projesini açar ve yazar; medya dosyası yeniden bağlanır |
+| `set_range` | Transkriptte kesit (bölüm) seçer ya da kaldırır (saniye ya da kelime sırasıyla); yeniden yazıya döküm yapmadan yalnızca o kesiti dışa aktarır, seslendirir ve videoya yazar |
 | `list_transcripts`, `get_transcript`, `export_transcript` | Okuma; satırlar, düz metin, SRT, VTT, kelime zamanlı JSON |
 | `edit_words`, `find_replace`, `find_text` | Düzeltme ve arama; değişmeyen kelimelerin zamanı korunur. `find_text` eşleşmelerin yerini ve zamanını listeler |
 | `retime_words`, `shift_timing` | Bir satırın ya da kelimenin zamanı; bütün altyazıyı kaydırma |

@@ -100,6 +100,7 @@ export async function placeLines(
   end: number,
   voice: Voice | ((line: number) => Voice),
   progress: Progress,
+  minStart = 0,
 ): Promise<{ clips: DubClip[]; overflow: DubOverflow | null }> {
   progress(0, "ses yükleniyor");
   const voiceOf = typeof voice === "function" ? voice : () => voice;
@@ -114,7 +115,7 @@ export async function placeLines(
   const made: { line: number; natural: number; speed: number }[] = [];
   const length = (c: DubClip) => c.audio.length / RATE;
   const timed = end > 0;
-  let free = 0; // where the previous clip ends
+  let free = minStart; // where the previous clip ends
   for (let i = 0; i < lines.length; i++) {
     progress(i / lines.length, `seslendiriliyor ${i + 1}/${lines.length}`);
     const line = lines[i];
@@ -154,7 +155,7 @@ export async function placeLines(
     const fit = () => {
       let over = clips[last].start + length(clips[last]) - end;
       for (let k = last; k >= 0 && over > 0; k--) {
-        const before = k > 0 ? clips[k - 1].start + length(clips[k - 1]) + GAP : 0;
+        const before = k > 0 ? clips[k - 1].start + length(clips[k - 1]) + GAP : minStart;
         const shift = Math.min(over, Math.max(0, clips[k].start - before));
         for (let j = k; j <= last; j++) clips[j].start -= shift;
         over -= shift;
@@ -307,6 +308,7 @@ export interface DubMeta {
   key: string;
   /** Seconds of the timeline the WAV covers. */
   duration: number;
+  start?: number;
   end: number;
   lines: SpokenLine[];
   clips: { line: number; start: number; seconds: number }[];

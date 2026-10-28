@@ -15,6 +15,7 @@ import { clock } from "../../src/lib/format";
 import { assign, labelWords, merge, rename } from "../../src/lib/speakers";
 import { parseSubtitles } from "../../src/lib/subtitles";
 import { retime, shiftAll, shiftSpan } from "../../src/lib/timing";
+import { wordsIn } from "../../src/lib/trim";
 import { writeNumbers } from "../../src/lib/numbers";
 import { sourceKey } from "../../src/lib/translation";
 import { renderCaptions, DEFAULT_CAPTIONS, type RenderOptions } from "./captions";
@@ -71,13 +72,29 @@ const view = (t: Transcript, language: "transcript" | "translation" = "transcrip
 /** The translation was made from other words than the transcript has now (the app says the same). */
 const stale = (t: Transcript) => !!t.translation && t.translation.source !== sourceKey(t.words);
 
-const summary = (t: Transcript) =>
-  `${t.id}  ${t.name}  ${t.words.length} kelime  ${clock(t.duration)}  ${t.lang}${t.model ? `  ${t.model}` : ""}` +
-  `${t.translation ? (stale(t) ? "  çeviri eski" : "  çeviri var") : ""}${t.speakers ? `  ${t.speakers.names.length} konuşmacı` : ""}`;
+const summary = (t: Transcript) => {
+  const inSpan = t.range ? wordsIn(t.words, t.range).length : t.words.length;
+  const words = t.range && inSpan !== t.words.length ? `${inSpan}/${t.words.length} kelime` : `${t.words.length} kelime`;
+  const span = t.range ? `  ${clock(t.range.start)}–${clock(t.range.end)}/${clock(t.duration)}` : `  ${clock(t.duration)}`;
+  return (
+    `${t.id}  ${t.name}  ${words}${span}  ${t.lang}${t.model ? `  ${t.model}` : ""}` +
+    `${t.translation ? (stale(t) ? "  çeviri eski" : "  çeviri var") : ""}${t.speakers ? `  ${t.speakers.names.length} konuşmacı` : ""}`
+  );
+};
 
-function render(t: Transcript, format: "lines" | "text" | "srt" | "vtt" | "json", language: "transcript" | "translation"): string {
-  const words = view(t, language);
+function render(t: Transcript, format: "lines" | "text" | "srt" | "vtt" | "json", language: "transcript" | "translation", full = false): string {
+  const all = view(t, language);
+  const range = full ? null : (t.range ?? null);
   const names = t.speakers?.names;
+  if (format === "lines") {
+    // Word indices stay the whole transcript's so edit_words and retime_words can address them.
+    return buildCues(all, SUBTITLE_RULES)
+      .filter((c) => !range || (c.end > range.start && c.start < range.end))
+      .map((c) => `[${c.first}..${c.first + c.words.length - 1}] ${clock(c.start)} ${c.words.map((w) => w.text).join(" ")}`)
+      .join("\n");
+  }
+  const words = wordsIn(all, range, true);
+  const duration = range ? range.end - range.start : t.duration;
   switch (format) {
     case "srt":
       return toSrt(buildCues(words, SUBTITLE_RULES), names);
@@ -86,12 +103,7 @@ function render(t: Transcript, format: "lines" | "text" | "srt" | "vtt" | "json"
     case "text":
       return toText(words, names);
     case "json":
-      return toJson(words, { id: t.id, name: t.name, lang: language === "translation" ? t.translation?.lang : t.lang, duration: t.duration }, names);
-    default:
-      // The word range of each line, so edit_words can address it.
-      return buildCues(words, SUBTITLE_RULES)
-        .map((c) => `[${c.first}..${c.first + c.words.length - 1}] ${clock(c.start)} ${c.words.map((w) => w.text).join(" ")}`)
-        .join("\n");
+      return toJson(words, { id: t.id, name: t.name, lang: language === "translation" ? t.translation?.lang : t.lang, duration }, names);
   }
 }
 
@@ -245,6 +257,64 @@ server.registerTool(
 );
 
 server.registerTool(
+  "set_range",
+  {
+    title: "Bölüm seç",
+    description:
+      "Transkriptin üzerinde çalışılacak ve dışa aktarılacak bölümünü (kesitini) belirler; yeniden yazıya döküm yapmaz. Saniye olarak (start, end) ya da get_transcript lines / find_text çıktısındaki kelime sırasıyla (first ve last ya da count) verilir. render_captions, dub, plan_jump_cut, tell_speakers ve export_transcript yalnızca bu bölümü işler; clear=true bütün dosyaya döner. undo ile geri alınabilir.",
+    inputSchema: {
+      id: z.string(),
+      start: z.number().min(0).optional().describe("Başlangıç, saniye"),
+      end: z.number().min(0).optional().describe("Bitiş, saniye"),
+      first: z.number().int().min(0).optional().describe("Başlangıç kelimesinin sırası (0'dan)"),
+      last: z.number().int().min(0).optional().describe("Bitiş kelimesinin sırası (dahil)"),
+      count: z.number().int().min(1).optional().describe("first'ten itibaren kaç kelime (last yerine)"),
+      pad: z.number().min(0).default(0.15).describe("Kelime sırası (first) verildiğinde ilk kelimeden önce ve son kelimeden sonra bırakılacak pay, saniye"),
+      clear: z.boolean().default(false).describe("true: bölüm seçimini kaldırır, bütün dosyaya döner"),
+    },
+  },
+  async (a) => {
+    try {
+      const t = store.load(a.id);
+      const max = t.duration || (t.words.at(-1)?.end ?? 0);
+      if (a.clear) {
+        if (!t.range) return text(`Zaten bütün dosya seçili (${clock(max)}).`);
+        store.checkpoint(t, "set_range (tümü)");
+        t.range = undefined;
+        store.save(t);
+        return text(`Bölüm seçimi kaldırıldı.\n${summary(t)}`);
+      }
+      let start = a.start;
+      let end = a.end;
+      if (a.first !== undefined) {
+        if (!t.words.length) throw new Error("Transkriptte kelime yok.");
+        const last = a.last ?? (a.count !== undefined ? a.first + a.count - 1 : a.first);
+        if (a.first >= t.words.length || last >= t.words.length || last < a.first) {
+          throw new Error(`Kelime aralığı ${a.first}..${last} geçersiz (0..${t.words.length - 1}).`);
+        }
+        start = start ?? Math.max(0, t.words[a.first].start - a.pad);
+        end = end ?? Math.min(max, t.words[last].end + a.pad);
+      }
+      if (start === undefined && end === undefined) {
+        throw new Error("start, end, first ya da clear=true verilmeli.");
+      }
+      const s = Math.max(0, start ?? t.range?.start ?? 0);
+      const e = Math.min(max, end ?? t.range?.end ?? max);
+      if (e <= s) throw new Error(`Bitiş (${e.toFixed(2)} sn) başlangıçtan (${s.toFixed(2)} sn) büyük olmalı.`);
+      const whole = s <= 0.01 && e >= max - 0.01;
+      const next = whole ? undefined : { start: Math.round(s * 1000) / 1000, end: Math.round(e * 1000) / 1000 };
+      store.checkpoint(t, next ? `set_range ${clock(next.start)}–${clock(next.end)}` : "set_range (tümü)");
+      t.range = next;
+      store.save(t);
+      const lines = render(t, "lines", "transcript");
+      return text(`${summary(t)}${lines ? `\n\n${trimmed(lines, 4000)}` : ""}`);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
   "export_project",
   {
     title: "Harfiyen projesi olarak kaydet",
@@ -279,14 +349,20 @@ server.registerTool(
   {
     title: "Transkripti oku",
     description:
-      "Transkripti okur. lines: her satırın kelime aralığı ve zamanıyla (edit_words bu aralıklarla çalışır); text, srt, vtt, json de olur. language=translation çeviriyi verir.",
-    inputSchema: { id: z.string(), format: Format.default("lines"), language: Language, max_chars: z.number().int().positive().default(20000) },
+      "Transkripti okur. lines: her satırın kelime aralığı ve zamanıyla (edit_words ve set_range bu aralıklarla çalışır); text, srt, vtt, json de olur. Bölüm seçiliyse (set_range) yalnızca o bölümü verir, full=true bütün transkripti verir. language=translation çeviriyi verir.",
+    inputSchema: {
+      id: z.string(),
+      format: Format.default("lines"),
+      language: Language,
+      full: z.boolean().default(false).describe("true: bölüm seçimi olsa bile bütün transkripti gösterir"),
+      max_chars: z.number().int().positive().default(20000),
+    },
   },
   async (a) => {
     try {
       const t = store.load(a.id);
       const warn = a.language === "translation" && stale(t) ? "Not: Transkript çeviriden sonra değişti; çeviri eski. translate ile yenilenir.\n\n" : "";
-      return text(warn + trimmed(render(t, a.format, a.language), a.max_chars));
+      return text(warn + trimmed(render(t, a.format, a.language, a.full), a.max_chars));
     } catch (e) {
       return fail(e);
     }
@@ -297,15 +373,21 @@ server.registerTool(
   "export_transcript",
   {
     title: "Dışa aktar",
-    description: "Transkripti SRT, VTT, düz metin ya da kelime zamanlı JSON olarak dosyaya yazar.",
-    inputSchema: { id: z.string(), format: z.enum(["srt", "vtt", "text", "json"]), language: Language, output: z.string().describe("Yazılacak dosyanın yolu") },
+    description: "Transkripti SRT, VTT, düz metin ya da kelime zamanlı JSON olarak dosyaya yazar. Bölüm seçiliyse (set_range) yalnızca o bölümü 0:00'dan başlayarak yazar; full=true bütün transkripti yazar.",
+    inputSchema: {
+      id: z.string(),
+      format: z.enum(["srt", "vtt", "text", "json"]),
+      language: Language,
+      full: z.boolean().default(false).describe("true: bölüm seçimi olsa bile bütün transkripti yazar"),
+      output: z.string().describe("Yazılacak dosyanın yolu"),
+    },
   },
   async (a) => {
     try {
       const t = store.load(a.id);
       const out = abs(a.output);
       mkdirSync(dirname(out), { recursive: true });
-      writeFileSync(out, render(t, a.format, a.language));
+      writeFileSync(out, render(t, a.format, a.language, a.full));
       return text(`Yazıldı: ${out}`);
     } catch (e) {
       return fail(e);
@@ -1014,20 +1096,25 @@ server.registerTool(
       const lang = tr ? t.translation!.lang : t.lang;
       if (!words.length) throw new Error("Okunacak metin yok.");
       const { voice, note } = voiceOf(a, lang);
-      const lines = dubLines(words, dubBySentence(lang, t.lang));
+      const allLines = dubLines(words, dubBySentence(lang, t.lang));
+      const lines = t.range ? allLines.filter((l) => l.end > t.range!.start && l.start < t.range!.end) : allLines;
+      if (!lines.length) throw new Error("Seçili bölümde okunacak metin yok.");
+      const keyWords = t.range ? words.filter((w) => w.end > t.range!.start && w.start < t.range!.end) : words;
       // A line is read by whoever says its first word.
       const per = speakerVoicesOf(a.speaker_voices, t, voice, lang);
       const who = per.size ? labelWords(words, t.speakers) : words;
       const voiceAt = (i: number) => per.get(who[lines[i].first]?.speaker ?? -1)?.voice ?? voice;
+      const start = t.range?.start ?? 0;
       const end = t.range?.end ?? t.duration;
       const started = Date.now();
-      const { clips, overflow } = await placeLines(lines, t.duration, end, per.size ? voiceAt : voice, report);
+      const { clips, overflow } = await placeLines(lines, t.duration, end, per.size ? voiceAt : voice, report, start);
       const meta: DubMeta = {
         voice,
         ...(per.size && { speakerVoices: [...per].map(([speaker, x]) => ({ speaker, name: x.name, voice: x.voice })) }),
         language: a.language,
-        key: dubKey(words),
+        key: dubKey(keyWords),
         duration: t.duration,
+        ...(t.range && { start }),
         end,
         lines,
         clips: clips.map((c) => ({ line: c.line, start: c.start, seconds: c.audio.length / 48000 })),

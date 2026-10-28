@@ -347,8 +347,11 @@ export function dubFor(
   const dub = o.dub === false || !existsSync(dubWavPath(t.id)) ? null : loadDub(t.id);
   if (!dub) return { dub, words, followed: false };
   const read = dub.language === "translation" ? t.translation?.words : t.words;
-  if (!read || dubKey(read) !== dub.key) {
-    notes.push("Seslendirme eski: metin ya da çeviri sonradan değişti. Altyazı seslendirmenin zamanını izlemedi; dub yeniden çalıştırılmalı.");
+  const span = t.range ?? { start: 0, end: t.duration };
+  const inSpan = t.range ? read?.filter((w) => w.end > t.range!.start && w.start < t.range!.end) : read;
+  const rangeOk = span.start >= (dub.start ?? 0) - 0.05 && span.end <= dub.end + 0.05;
+  if (!read || !rangeOk || (dubKey(read) !== dub.key && (!inSpan || dubKey(inSpan) !== dub.key))) {
+    notes.push("Seslendirme eski: metin, çeviri ya da seçili bölüm sonradan değişti. Altyazı seslendirmenin zamanını izlemedi; dub yeniden çalıştırılmalı.");
     return { dub, words, followed: false };
   }
   if (o.followDub !== false && dub.language === o.language) return { dub, words: timeToDub(words, dub.lines, dub.clips), followed: true };

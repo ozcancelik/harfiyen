@@ -6,6 +6,7 @@ import type { DecodeOptions, DecodingMethod, SpeechLang, Word } from "../../src/
 import { OnlineFbank } from "../../src/engine/fbank";
 import { findCuts, DEFAULT_JUMP_CUT, type JumpCut } from "../../src/lib/cuts";
 import { fromLabels } from "../../src/lib/speakers";
+import { wordsIn } from "../../src/lib/trim";
 import { placeTranslation, sourceKey, splitSentences, type Translation } from "../../src/lib/translation";
 import { writeNumbers, type NumberMode } from "../../src/lib/numbers";
 import { BandTracker } from "../../src/render/aura";
@@ -115,18 +116,19 @@ export async function tellSpeakers(t: Transcript, speakers: number | undefined, 
   if (!t.source) throw new Error("Konuşmacı ayırmak için transkriptin bir ses ya da video dosyası olmalı.");
   const start = t.range?.start ?? 0;
   const end = t.range?.end ?? t.duration;
+  const words = wordsIn(t.words, t.range ?? null);
   progress(0, "model yükleniyor");
   const embedder = await speakerEmbedder("speakers");
   const audio = new Features();
   for await (const pcm of pcmChunks(t.source, start, end)) audio.push(pcm);
   audio.finish();
-  const labels = await diarize(embedder, audio, start, t.words, {
+  const labels = await diarize(embedder, audio, start, words, {
     speakers,
     onProgress: (done) => progress(done, "sesler karşılaştırılıyor"),
   });
   if (!labels) throw new Error("İptal edildi.");
   progress(1);
-  return fromLabels(t.words, labels);
+  return fromLabels(words, labels);
 }
 
 /** Speech loudness per BAND_RATE frame from the file's start, the way the recognizer's features give it. */

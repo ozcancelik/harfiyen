@@ -7,8 +7,9 @@ import { basename, extname } from "node:path";
 import type { Corner } from "../../src/captions/style";
 import type { Word } from "../../src/engine";
 import { cropFor, framing, RATIO, type Crop } from "../../src/lib/crop";
-import { keptLength, keptParts } from "../../src/lib/cuts";
+import { keptLength, keptParts, wordsOutside } from "../../src/lib/cuts";
 import { labelWords } from "../../src/lib/speakers";
+import { wordsIn } from "../../src/lib/trim";
 import type { Encode } from "../../src/worker/render.worker";
 import type { BurnJob } from "../render-host/host";
 import { probe, type MediaInfo } from "./audio";
@@ -161,7 +162,7 @@ export async function renderChrome(
     );
   }
   if (wantBands || loud) {
-    const wave = await waveformOf(t.source, t.duration, (s) => progress(s * 0.15, "ses okunuyor"));
+    const wave = await waveformOf(t.source, span.end, (s) => progress(s * 0.15, "ses okunuyor"));
     inputs.bands = wave.bands;
     inputs.loudness = wave.loudness;
   }
@@ -172,8 +173,10 @@ export async function renderChrome(
   const frame = frameFor(o, info, noPicture);
   const hevc = o.codec === "hevc";
   const names = o.speakerNames === false ? null : (t.speakers?.names ?? null);
+  // Only the trimmed part's words (less cut fillers), so no caption line reaches outside it.
+  const shownWords = wordsOutside(wordsIn(words, t.range ?? null), cuts);
   const job = (encoder: Encode["encoder"]): BurnJob => ({
-    words,
+    words: shownWords,
     settings: c.settings as BurnJob["settings"],
     preset: c.preset as BurnJob["preset"],
     patch: patch as BurnJob["patch"],
