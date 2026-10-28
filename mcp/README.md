@@ -4,8 +4,9 @@ Harfiyen'in motorlarını [MCP](https://modelcontextprotocol.io) sunucusu olarak
 çeviri, konuşmacı ayırma, boşluk kesme planı ve altyazılı video. Web uygulamasıyla aynı kod ve aynı modeller
 kullanılır (`../src`); ses ve video bilgisayardan çıkmaz.
 
-Tarayıcıya bağlı kısımlar (WebGPU oynatıcı, 11 altyazı stili, aura, kinetik tipografi, seslendirme) burada yoktur.
-Altyazılı video ffmpeg ve libass ile yazılır; web uygulamasının dokuz stili vardır (cam, aura ve kinetik tipografi yok).
+Oynatıcı ve canlı mikrofon burada yoktur. Altyazılı video iki yoldan yazılır: web uygulamasının dokuz stili ffmpeg ve
+libass ile; cam stili, aura ve kinetik tipografi (WebGPU ve canvas kodu, ffmpeg çizemez) uygulamanın kendi video
+yazıcısıyla, bilgisayardaki Chrome'da. Hangisinin kullanılacağını `render_captions` kendisi seçer.
 
 ## Kurulum
 
@@ -15,7 +16,8 @@ Depo kökünde `npm install` ve `npm run models` (modeller `public/models` altı
 cd mcp && npm install
 ```
 
-ffmpeg ve ffprobe PATH'te olmalı. Modeller `HARFIYEN_MODELS` ile başka bir klasörden de okunabilir.
+ffmpeg ve ffprobe PATH'te olmalı. Cam, aura ve kinetik stiller için Chrome kurulu olmalı (yolu `CHROME` ile verilebilir;
+puppeteer-core tarayıcı indirmez). Modeller `HARFIYEN_MODELS` ile başka bir klasörden de okunabilir.
 Transkriptler `~/.harfiyen-mcp/transcripts` altında saklanır (`HARFIYEN_MCP_HOME` ile değişir).
 
 Claude Code'a eklemek için:
@@ -55,6 +57,22 @@ Uzun işler tek tek, sırayla çalışır (modeller belleği paylaşır) ve iler
 - Altyazı stilleri web uygulamasındakinin yakın bir taklididir, birebir aynı görünmez.
 - Canlı mikrofon yok.
 
+## Chrome ile yazma
+
+`render_captions` şu durumlarda videoyu uygulamanın kendi render worker'ıyla (`../src/worker/render.worker.ts`),
+görünmez bir Chrome'da yazar; çıktı uygulamanınkiyle aynı çizilir:
+
+- `preset: cam`, `kinetic`, `picture: aura`, `aura`, `aura_style` istendiğinde;
+- projede cam stili, kinetik tipografi ya da gizli/bulanık görüntü varsa (başka bir `style` istenmediyse);
+- `engine: chrome` ile her stil için.
+
+Chrome yoksa projedekiler için en yakın ffmpeg stili kullanılır ve cevapta not düşülür; elle istenenler için hata verilir.
+`engine: ffmpeg` Chrome'a hiç gitmez. Kadraj, seslendirme (`original_volume`), boşluk kesme, `crf` ve `width` iki yolda da çalışır.
+
+İlk kullanımda `../src` ve `render-host/` Vite ile derlenip `~/.harfiyen-mcp/render-host` altına konur (birkaç saniye);
+kod değişince kendiliğinden yeniden derlenir. Şimdilik yalnızca macOS'ta denendi. Chrome yolunda `size` uygulamanın boyudur
+(kısa kenarın payı), `font_file`, `bold`, logo ve arka plan fotoğrafı yoktur. Kaynak video sayfaya bütün olarak okunur.
+
 ## Altyazı stilleri ve yazı tipleri
 
 `style`: `klasik`, `sade`, `karaoke`, `akis`, `odak`, `vurgu`, `pop`, `netles`, `tek-kelime`. `emphasis: true`
@@ -87,8 +105,9 @@ parametreler üstüne yazar, `use_project: false` projeyi yok sayar.
 | Kadraj | kırpma kutusu (köşe ve boyutuyla), ya da sığdır ve siyah / bulanık zemin |
 | Boşluk kesme | açıksa aynı ayarlarla |
 
-Burada çizilemeyenler cevapta "Not:" olarak bildirilir: cam stili, kinetik tipografi, projeye özel yüklenmiş yazı tipi
-(dosyası projede yok; `font_file` verilir), gizli altyazı, gizli ya da bulanık görüntü, arka plan fotoğrafı.
+Chrome varsa cam stili, kinetik tipografi ve gizli ya da bulanık görüntü projedeki gibi çizilir. Çizilemeyenler cevapta
+"Not:" olarak bildirilir: projeye özel yüklenmiş yazı tipi (dosyası projede yok; `font_file` verilir), gizli altyazı,
+arka plan fotoğrafı, logo; Chrome yoksa ayrıca cam stili, kinetik tipografi ve gizli ya da bulanık görüntü.
 Style değiştirirsen projenin o stile ait boyutu, konumu ve zemini kullanılmaz (pop'un boyutu sade'de anlamsız olurdu).
 
 ## Seslendirme

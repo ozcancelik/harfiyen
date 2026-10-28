@@ -9,6 +9,7 @@ export interface MediaInfo {
   /** Channels of the first audio stream. */
   channels: number;
   hasVideo: boolean;
+  /** The picture as it is shown: a phone video turned a quarter is already upright here. */
   width: number;
   height: number;
 }
@@ -27,17 +28,25 @@ function run(cmd: string, args: string[]): Promise<string> {
 
 export async function probe(file: string): Promise<MediaInfo> {
   const json = JSON.parse(
-    await run("ffprobe", ["-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height,channels", "-of", "json", file]),
+    await run("ffprobe", [
+      "-v", "error",
+      "-show_entries", "format=duration:stream=codec_type,width,height,channels:stream_tags=rotate:stream_side_data=rotation",
+      "-of", "json", file,
+    ]),
   );
-  const streams: { codec_type: string; width?: number; height?: number; channels?: number }[] = json.streams ?? [];
+  type Stream = { codec_type: string; width?: number; height?: number; channels?: number; tags?: { rotate?: string }; side_data_list?: { rotation?: number }[] };
+  const streams: Stream[] = json.streams ?? [];
   const video = streams.find((s) => s.codec_type === "video");
+  // ffmpeg and the app turn the picture upright; the sizes are of the upright picture.
+  const turn = Math.abs(Number(video?.side_data_list?.find((d) => d.rotation !== undefined)?.rotation ?? video?.tags?.rotate ?? 0)) % 180 === 90;
+  const [width, height] = turn ? [video?.height ?? 0, video?.width ?? 0] : [video?.width ?? 0, video?.height ?? 0];
   return {
     duration: Number(json.format?.duration) || 0,
     hasAudio: streams.some((s) => s.codec_type === "audio"),
     channels: streams.find((s) => s.codec_type === "audio")?.channels ?? 1,
     hasVideo: !!video,
-    width: video?.width ?? 0,
-    height: video?.height ?? 0,
+    width,
+    height,
   };
 }
 

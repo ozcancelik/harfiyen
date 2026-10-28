@@ -1,5 +1,7 @@
-// The look a web-app project was saved with (caption style, crop, jump cut) as render_captions' options. What the
-// MCP cannot draw is reported in `notes`, never dropped silently.
+// The look a web-app project was saved with (caption style, crop, jump cut) as render_captions' options. What only
+// the app's own renderer (Chrome, src/chrome.ts) draws is in `chromeOnly`: with Chrome it is drawn as the project has
+// it, without it the nearest ffmpeg look is used and the note says what is missing. What neither draws is in `notes`,
+// never dropped silently.
 
 import type { JumpCut } from "../../src/lib/cuts";
 import type { Aspect, CaptionOptions, CaptionStyle } from "./captions";
@@ -15,7 +17,11 @@ export interface Look {
   /** The slice of the picture kept, as fractions of it (fill). */
   cropBox?: { x: number; y: number; w: number; h: number };
   jumpCut?: Partial<JumpCut>;
-  /** What the project asked for that cannot be drawn here. */
+  /** The project's caption settings as the app saved them, for the app's renderer. */
+  settings?: Record<string, unknown>;
+  /** What the project asks for that only the app's renderer draws, and what to tell when ffmpeg stands in for it. */
+  chromeOnly: { why: string; note: string }[];
+  /** What the project asked for that cannot be drawn at all. */
   notes: string[];
   /** What the project gave, by part, for the tool's answer (a part asked for by hand is not the project's). */
   used: { style?: string; crop?: string; jumpCut?: string };
@@ -33,7 +39,7 @@ const PRESETS: Record<string, CaptionStyle> = {
   tek: "tek-kelime",
   netles: "netles",
   sade: "sade",
-  // The blurred glass needs the GPU; the dark box is the nearest calm look.
+  // The blurred glass needs the app's renderer; the dark box is the nearest calm look.
   cam: "klasik",
 };
 
@@ -51,19 +57,23 @@ const FONTS: Record<string, string> = {
   literata: "Literata",
 };
 
+/** The app's font id for a family name (fonts.ts); undefined for a system font the app does not bundle. */
+export const fontIdOf = (family: string) => Object.entries(FONTS).find(([, f]) => f.toLowerCase() === family.toLowerCase())?.[0];
+
 const ASPECTS = new Set(["9:16", "4:5", "1:1", "16:9"]);
 const num = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 const obj = (x: unknown): Record<string, unknown> | undefined => (x && typeof x === "object" ? (x as Record<string, unknown>) : undefined);
 const hex = (x: unknown) => (typeof x === "string" && /^#[0-9a-f]{6}$/i.test(x) ? x : undefined);
 
 export function lookOf(app: Record<string, unknown> | undefined): Look {
-  const look: Look = { captions: {}, notes: [], used: {} };
+  const look: Look = { captions: {}, chromeOnly: [], notes: [], used: {} };
   const s = obj(app?.settings);
   if (s) {
+    look.settings = s;
     if (typeof s.preset === "string" && s.preset in PRESETS) {
       look.style = PRESETS[s.preset];
       look.used.style = `stil ${s.preset}${s.preset === PRESETS[s.preset] ? "" : ` → ${look.style}`}`;
-      if (s.preset === "cam") look.notes.push("Cam stili yok (buzlu cam ekran kartı gerektirir); koyu kutulu klasik stil kullanıldı.");
+      if (s.preset === "cam") look.chromeOnly.push({ why: "cam stili", note: "Cam stili çizilemedi (Chrome gerekir); koyu kutulu klasik stil kullanıldı." });
     }
     if (typeof s.font === "string") {
       if (s.font in FONTS) look.captions.font = FONTS[s.font];
@@ -82,10 +92,12 @@ export function lookOf(app: Record<string, unknown> | undefined): Look {
     else if (s.background === "glass") look.captions.background = "box";
     if (typeof s.voiceEmphasis === "boolean") look.emphasis = s.voiceEmphasis;
     if (typeof s.speakerNames === "boolean") look.speakerNames = s.speakerNames;
-    if (obj(s.kinetic)?.on === true) look.notes.push("Projede kinetik tipografi açık; burada yok, altyazı stiliyle yazıldı.");
+    if (obj(s.kinetic)?.on === true) look.chromeOnly.push({ why: "kinetik tipografi", note: "Projede kinetik tipografi açık; Chrome olmadan çizilemez, altyazı stiliyle yazıldı." });
     if (s.hidden === true) look.notes.push("Projede altyazı gizli işaretli (yalnızca seslendirmeli video); altyazı yine de yazıldı.");
-    if (s.picture === "hidden" || s.picture === "blur") look.notes.push("Projede görüntü gizli ya da bulanık; burada görüntü olduğu gibi kullanıldı.");
-    if (s.photo === true) look.notes.push("Projede arka plan fotoğrafı var; burada kullanılmıyor.");
+    if (s.picture === "hidden" || s.picture === "blur") {
+      look.chromeOnly.push({ why: "gizli ya da bulanık görüntü", note: "Projede görüntü gizli ya da bulanık; Chrome olmadan görüntü olduğu gibi kullanıldı." });
+    }
+    if (s.photo === true) look.notes.push("Projede arka plan fotoğrafı var; kullanılmıyor.");
   }
 
   const c = obj(app?.crop);

@@ -149,7 +149,9 @@ export async function planCuts(t: Transcript, jc: Partial<JumpCut>, keep: { star
   if (!t.source) throw new Error("Boşluk kesmek için transkriptin bir ses ya da video dosyası olmalı.");
   const span = t.range ?? { start: 0, end: t.duration };
   const loudness = await loudnessOf(t.source, span.end);
-  return findCuts(t.words, span, { ...DEFAULT_JUMP_CUT, ...jc, on: true }, loudness, keep);
+  // A setting left out arrives as undefined, which would overwrite its default.
+  const given = Object.fromEntries(Object.entries(jc).filter(([, v]) => v !== undefined));
+  return findCuts(t.words, span, { ...DEFAULT_JUMP_CUT, ...given, on: true }, loudness, keep);
 }
 
 /** Peak amplitude per this many seconds, as the app's waveform (src/worker/protocol.ts). */

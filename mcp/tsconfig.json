@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "types": ["node"]
+    "types": ["node", "vite/client", "@webgpu/types"]
   },
-  "include": ["src"]
+  "include": ["src", "render-host"]
 }

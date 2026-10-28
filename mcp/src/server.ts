@@ -17,9 +17,11 @@ import { parseSubtitles } from "../../src/lib/subtitles";
 import { retime, shiftAll, shiftSpan } from "../../src/lib/timing";
 import { writeNumbers } from "../../src/lib/numbers";
 import { sourceKey } from "../../src/lib/translation";
-import { renderCaptions, DEFAULT_CAPTIONS } from "./captions";
+import { renderCaptions, DEFAULT_CAPTIONS, type RenderOptions } from "./captions";
+import { findChrome, missingChrome } from "./chrome";
+import { renderChrome, type ChromeStyle } from "./chromeCaptions";
 import * as jobs from "./jobs";
-import { lookOf } from "./appstyle";
+import { fontIdOf, lookOf } from "./appstyle";
 import { dubBySentence, dubKey, dubLines, dubWavPath, loadDub, placeLines, saveDub, speak, timeToDub, wordsFromText, writeDubWav, type DubMeta } from "./dub";
 import { BUNDLED } from "./fonts";
 import { installed, modelDir, SPEECH_MODELS } from "./models";
@@ -517,6 +519,19 @@ server.registerTool(
     }),
 );
 
+/** The app's preset each ffmpeg style stands for. */
+const STYLE_PRESET: Record<string, string> = {
+  klasik: "klasik",
+  sade: "sade",
+  karaoke: "karaoke",
+  akis: "akis",
+  odak: "odak",
+  vurgu: "vurgu",
+  pop: "pop",
+  netles: "netles",
+  "tek-kelime": "tek",
+};
+
 /** The jump cut's settings for render_captions: left out, the project's (or the defaults) apply. */
 const JumpCutOptional = {
   gap: z.number().min(0.1).optional().describe("Kesilecek en kısa sessizlik, saniye (varsayılan 0,6)"),
@@ -529,12 +544,19 @@ server.registerTool(
   {
     title: "Altyazılı video",
     description:
-      "Altyazıyı videoya yazar (ffmpeg + libass). Transkript web uygulamasının .harfiyen projesinden geldiyse (import_project) projenin altyazı stili, yazı tipi, renkleri, boyutu, kadrajı (kırpma kutusu ya da sığdırma, bulanık zemin) ve boşluk kesme ayarı varsayılan olarak kullanılır; verilen parametreler bunun üstüne yazar, use_project=false projeyi yok sayar. Stiller: klasik (koyu kutu), sade (gölgeli), karaoke (söylenen kelime renkle dolar), akis (kelimeler söylendikçe yerinde belirir), odak (bulanıktan netleşir), vurgu (söylenen kelime renkli işaretleyici), pop (ortada 3 iri zıplayan kelime), netles (ortada tek iri kelime bulanıktan netleşir), tek-kelime (ortada tek iri kelime). Cam stili, aura, logo ve kinetik tipografi yok; projede varsa cevapta not olarak bildirilir. Yalnızca ses dosyasında koyu bir zemin kullanılır.",
+      "Altyazıyı videoya yazar (ffmpeg + libass). Transkript web uygulamasının .harfiyen projesinden geldiyse (import_project) projenin altyazı stili, yazı tipi, renkleri, boyutu, kadrajı (kırpma kutusu ya da sığdırma, bulanık zemin) ve boşluk kesme ayarı varsayılan olarak kullanılır; verilen parametreler bunun üstüne yazar, use_project=false projeyi yok sayar. Stiller: klasik (koyu kutu), sade (gölgeli), karaoke (söylenen kelime renkle dolar), akis (kelimeler söylendikçe yerinde belirir), odak (bulanıktan netleşir), vurgu (söylenen kelime renkli işaretleyici), pop (ortada 3 iri zıplayan kelime), netles (ortada tek iri kelime bulanıktan netleşir), tek-kelime (ortada tek iri kelime). Yalnızca ses dosyasında koyu bir zemin kullanılır. Cam stili, aura ve kinetik tipografi ffmpeg ile çizilemez: bunlar istenince (preset=cam, kinetic, picture=aura, aura, aura_style) ya da projede varsa video, uygulamanın kendi çizim koduyla kurulu Chrome'da yazılır (engine=auto; Chrome yoksa proje için en yakın ffmpeg stili kullanılır ve cevapta not düşülür, istenen için hata verilir). engine=chrome her stili uygulamanın çizimiyle yazar; Chrome yolunda size uygulamanın boyudur (kısa kenarın payı), font_file ve bold yoktur, logo ve arka plan fotoğrafı henüz yok.",
     inputSchema: {
       id: z.string(),
       output: z.string().describe("Yazılacak .mp4 dosyasının yolu"),
       use_project: z.boolean().default(true).describe("Transkript bir Harfiyen projesinden geldiyse onun stilini ve kadrajını kullan"),
       style: z.enum(["klasik", "sade", "karaoke", "akis", "odak", "vurgu", "pop", "netles", "tek-kelime"]).optional(),
+      engine: z.enum(["auto", "ffmpeg", "chrome"]).default("auto").describe("auto: cam, aura ve kinetik gerekiyorsa Chrome, değilse ffmpeg; chrome: her şeyi uygulamanın çizimiyle yaz; ffmpeg: Chrome'a hiç gitme"),
+      preset: z.enum(["klasik", "karaoke", "dolgu", "akis", "odak", "vurgu", "pop", "tek", "netles", "sade", "cam"]).optional().describe("Uygulamanın altyazı stili (Chrome ile yazılır); cam yalnızca burada var"),
+      kinetic: z.enum(["dugum", "pano", "fizik", "kamera", "poster", "darbe", "maske", "tunel"]).optional().describe("Altyazı yerine tam ekran kinetik tipografi (Chrome ile yazılır)"),
+      kinetic_palette: z.enum(["gece", "neon", "krem", "mercan", "firuze"]).optional(),
+      picture: z.enum(["video", "aura"]).optional().describe("aura: videonun görüntüsü yerine sesle hareket eden aura (Chrome ile yazılır; çıkış 1080p ya da kadrajın şekli)"),
+      aura: z.enum(["cini", "gunbatimi", "orman", "lavanta", "gece"]).optional().describe("Aura paleti"),
+      aura_style: z.enum(["aura", "halo", "spektrum", "kure", "akis"]).optional().describe("Aura görünümü: spektrum Ufuk, akis Sırtlar"),
       emphasis: z.boolean().optional().describe("Sesle vurgula: çevresinden yüksek sesle söylenen kelimeler büyük (ve çoğu stilde vurgu renginde) yazılır"),
       language: Language,
       dub: z.boolean().optional().describe("Seslendirmeyi (dub aracı) karıştır; verilmezse varsa karıştırılır, false ile hiç karıştırılmaz"),
@@ -547,7 +569,7 @@ server.registerTool(
       font_file: z.string().optional().describe("Kendi yazı tipin (TTF ya da OTF); verilirse font yerine bu kullanılır"),
       bold: z.boolean().optional().describe("Kalın; verilmezse yazı tipine göre (Anton, Bangers gibi tek kalınlıklılarda kapalı)"),
       uppercase: z.boolean().optional().describe("Türkçe kurala uygun büyük harf (i → İ); verilmezse yazı tipine göre (Luckiest Guy, Bangers, Bebas Neue yalnızca büyük harf bildiği için açık)"),
-      size: z.number().min(0.02).max(0.15).optional().describe("Yazı boyu, kare yüksekliğinin payı; büyük stiller (pop, tek-kelime, netles) bunu ayrıca büyütür"),
+      size: z.number().min(0.02).max(0.15).optional().describe("Yazı boyu, kare yüksekliğinin payı; büyük stiller (pop, tek-kelime, netles) bunu ayrıca büyütür. Chrome yolunda uygulamanın boyudur: kısa kenarın payı, stilin kendi boyu hazır"),
       position: z.enum(["alt", "orta", "ust"]).optional().describe("Verilmezse stile göre: tek kelimelik stiller ortada, diğerleri altta"),
       text_background: z.enum(["box", "outline", "shadow"]).optional().describe("Yazının zemini: koyu kutu, kontur ya da gölge"),
       color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
@@ -586,49 +608,87 @@ server.registerTool(
           : a.jump_cut === true || look.jumpCut
             ? { gap: a.gap ?? look.jumpCut?.gap, pad: a.pad ?? look.jumpCut?.pad, fillers: a.fillers ?? look.jumpCut?.fillers }
             : undefined;
-      const r = await renderCaptions(
-        t,
-        {
-          output: abs(a.output),
-          captions: {
-            style: a.style ?? look.style ?? DEFAULT_CAPTIONS.style,
-            font: a.font ?? look.captions.font ?? DEFAULT_CAPTIONS.font,
-            bold: a.bold,
-            uppercase: a.uppercase ?? look.captions.uppercase,
-            ...size,
-            position: a.position ?? fromProject.position,
-            background: a.text_background ?? fromProject.background,
-            color: a.color ?? look.captions.color ?? DEFAULT_CAPTIONS.color,
-            accent: a.accent ?? look.captions.accent ?? DEFAULT_CAPTIONS.accent,
-          },
-          emphasis: a.emphasis ?? look.emphasis ?? false,
-          speakerNames: a.speaker_names ?? look.speakerNames,
-          fontFile: a.font_file ? abs(a.font_file) : undefined,
-          aspect: a.aspect ?? (ownCrop ? look.aspect : undefined),
-          fit,
-          backdrop: a.backdrop ?? (ownCrop ? look.backdrop : undefined),
-          cropBox: ownCrop && fit === "fill" ? look.cropBox : undefined,
-          jumpCut,
-          language: a.language,
-          dub: a.dub,
-          original: a.original_volume,
-          followDub: a.follow_dub,
-          codec: a.codec,
-          crf: a.crf,
-          width: a.width,
+      const opts: RenderOptions = {
+        output: abs(a.output),
+        captions: {
+          style: a.style ?? look.style ?? DEFAULT_CAPTIONS.style,
+          font: a.font ?? look.captions.font ?? DEFAULT_CAPTIONS.font,
+          bold: a.bold,
+          uppercase: a.uppercase ?? look.captions.uppercase,
+          ...size,
+          position: a.position ?? fromProject.position,
+          background: a.text_background ?? fromProject.background,
+          color: a.color ?? look.captions.color ?? DEFAULT_CAPTIONS.color,
+          accent: a.accent ?? look.captions.accent ?? DEFAULT_CAPTIONS.accent,
         },
-        report,
-      );
+        emphasis: a.emphasis ?? look.emphasis ?? false,
+        speakerNames: a.speaker_names ?? look.speakerNames,
+        fontFile: a.font_file ? abs(a.font_file) : undefined,
+        aspect: a.aspect ?? (ownCrop ? look.aspect : undefined),
+        fit,
+        backdrop: a.backdrop ?? (ownCrop ? look.backdrop : undefined),
+        cropBox: ownCrop && fit === "fill" ? look.cropBox : undefined,
+        jumpCut,
+        language: a.language,
+        dub: a.dub,
+        original: a.original_volume,
+        followDub: a.follow_dub,
+        codec: a.codec,
+        crf: a.crf,
+        width: a.width,
+      };
+
+      // The app's own renderer draws what ffmpeg cannot: asked for by hand, or in the project (unless another style was asked for).
+      const asked = [a.preset, a.kinetic, a.kinetic_palette, a.picture === "aura" || undefined, a.aura, a.aura_style].some((x) => x !== undefined);
+      const projectWants = a.use_project && a.style === undefined && look.chromeOnly.length > 0;
+      const wantChrome = a.engine === "chrome" || (a.engine === "auto" && (asked || projectWants));
+      const chrome = wantChrome ? findChrome() : null;
+      if (wantChrome && !chrome && (a.engine === "chrome" || asked)) throw new Error(missingChrome());
+      if (chrome && a.font_file) throw new Error("font_file Chrome yolunda yok (uygulamanın paketli yazı tipleri kullanılır); engine=ffmpeg ile yaz.");
+
+      let r: { output: string; seconds: number; cuts: number; size: string; dubbed: boolean; notes: string[] };
+      let drawnBy = "";
+      if (chrome) {
+        const family = a.font ?? undefined;
+        const fontId = family ? fontIdOf(family) : undefined;
+        const c: ChromeStyle = {
+          settings: a.use_project ? look.settings : undefined,
+          preset: a.preset ?? (a.style ? STYLE_PRESET[a.style] : undefined),
+          patch: {
+            ...(fontId && { font: fontId }),
+            ...(a.size !== undefined && { size: a.size }),
+            ...(a.position && { position: { alt: "bottom", orta: "middle", ust: "top" }[a.position] }),
+            ...(a.color && { textColor: a.color }),
+            ...(a.accent && { accentColor: a.accent }),
+            ...(a.uppercase !== undefined && { uppercase: a.uppercase }),
+            ...(a.text_background && { background: a.text_background }),
+            ...(a.speaker_names !== undefined && { speakerNames: a.speaker_names }),
+            ...(a.aura && { aura: a.aura }),
+            ...(a.aura_style && { auraStyle: a.aura_style }),
+          },
+          kinetic: a.kinetic ? { style: a.kinetic, ...(a.kinetic_palette && { palette: a.kinetic_palette }) } : undefined,
+          picture: a.picture,
+        };
+        // A palette alone changes the project's kinetic stage; it does not turn one on.
+        if (!c.kinetic && a.kinetic_palette && (look.settings as { kinetic?: { on?: boolean } } | undefined)?.kinetic?.on) c.kinetic = { palette: a.kinetic_palette };
+        const done = await renderChrome(t, opts, c, report);
+        r = done;
+        drawnBy = `\nUygulamanın kendi çizimiyle yazıldı (Chrome, ${done.gpu}).`;
+        if (family && !fontId) r.notes.push(`"${family}" paketli yazı tiplerinden değil; Chrome yolunda yalnızca paketli olanlar kullanılır, projenin yazı tipi kalır.`);
+      } else {
+        r = await renderCaptions(t, opts, report);
+      }
       const given = [
-        a.style === undefined && look.used.style,
+        a.style === undefined && !chrome && look.used.style,
         ownCrop && a.fit === undefined && look.used.crop,
         a.jump_cut === undefined && look.used.jumpCut,
       ].filter(Boolean);
       const used = given.length ? `\nProjeden: ${given.join(", ")}` : "";
-      const notes = look.notes.map((n) => `\nNot: ${n}`).join("");
+      // What only the app's renderer draws is told about only when ffmpeg stood in for it.
+      const notes = [...(chrome ? [] : look.chromeOnly.map((x) => x.note)), ...look.notes].map((n) => `\nNot: ${n}`).join("");
       const dubbed = r.dubbed ? `\nSeslendirme karıştırıldı (orijinal ses %${Math.round(a.original_volume * 100)}).` : "";
       const more = r.notes.map((n) => `\nNot: ${n}`).join("");
-      return `Yazıldı: ${r.output}\n${r.size}, ${r.seconds.toFixed(1)} sn${r.cuts ? `, ${r.cuts} kesim` : ""}${used}${dubbed}${notes}${more}`;
+      return `Yazıldı: ${r.output}\n${r.size}, ${r.seconds.toFixed(1)} sn${r.cuts ? `, ${r.cuts} kesim` : ""}${drawnBy}${used}${dubbed}${notes}${more}`;
     }),
 );
 

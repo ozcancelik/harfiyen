@@ -10,7 +10,7 @@ import { keptLength, keptParts, wordsThrough, type Kept } from "../../src/lib/cu
 import { loudWords } from "../../src/captions/emphasis";
 import { labelWords } from "../../src/lib/speakers";
 import { ffmpeg, probe } from "./audio";
-import { dubKey, dubWavPath, loadDub, timeToDub } from "./dub";
+import { dubKey, dubWavPath, loadDub, timeToDub, type DubMeta } from "./dub";
 import { prepareFontsDir, resolveFont } from "./fonts";
 import { loudnessOf, planCuts, type Progress } from "./pipeline";
 import type { Transcript } from "./transcript";
@@ -330,6 +330,27 @@ function graph(parts: Kept[], hasVideo: boolean, g: Geometry, out: { w: number; 
   return pieces.join(";");
 }
 
+/**
+ * The transcript's dub as the video uses it: mixed in (`dub: false` leaves it out), and the words in its language
+ * given the voice's times so captions follow it. A dub made before the words changed is mixed in but not followed.
+ */
+export function dubFor(
+  t: Transcript,
+  o: Pick<RenderOptions, "language" | "dub" | "followDub">,
+  words: Word[],
+  notes: string[],
+): { dub: DubMeta | null; words: Word[]; followed: boolean } {
+  const dub = o.dub === false || !existsSync(dubWavPath(t.id)) ? null : loadDub(t.id);
+  if (!dub) return { dub, words, followed: false };
+  const read = dub.language === "translation" ? t.translation?.words : t.words;
+  if (!read || dubKey(read) !== dub.key) {
+    notes.push("Seslendirme eski: metin ya da çeviri sonradan değişti. Altyazı seslendirmenin zamanını izlemedi; dub yeniden çalıştırılmalı.");
+    return { dub, words, followed: false };
+  }
+  if (o.followDub !== false && dub.language === o.language) return { dub, words: timeToDub(words, dub.lines, dub.clips), followed: true };
+  return { dub, words, followed: false };
+}
+
 export async function renderCaptions(
   t: Transcript,
   o: RenderOptions,
@@ -348,17 +369,10 @@ export async function renderCaptions(
 
   // The dub: mixed in, and the captions in its language follow its voice.
   const notes: string[] = [];
-  const dub = o.dub === false || !existsSync(dubWavPath(t.id)) ? null : loadDub(t.id);
-  let followed = false;
-  if (dub) {
-    const read = dub.language === "translation" ? t.translation?.words : t.words;
-    if (!read || dubKey(read) !== dub.key) {
-      notes.push("Seslendirme eski: metin ya da çeviri sonradan değişti. Altyazı seslendirmenin zamanını izlemedi; dub yeniden çalıştırılmalı.");
-    } else if (o.followDub !== false && dub.language === o.language) {
-      words = timeToDub(words, dub.lines, dub.clips);
-      followed = true;
-    }
-  }
+  const heard = dubFor(t, o, words, notes);
+  const dub = heard.dub;
+  const followed = heard.followed;
+  words = heard.words;
   if (followed && o.emphasis) notes.push("Sesle vurgula seslendirmeye hizalı altyazıda kullanılmadı: kelimelerin zamanı sesten gelmiyor.");
 
   progress(0, "kesimler aranıyor");
