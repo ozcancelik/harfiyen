@@ -6,6 +6,8 @@ import { createInterface } from "node:readline";
 export interface MediaInfo {
   duration: number;
   hasAudio: boolean;
+  /** Channels of the first audio stream. */
+  channels: number;
   hasVideo: boolean;
   width: number;
   height: number;
@@ -25,13 +27,14 @@ function run(cmd: string, args: string[]): Promise<string> {
 
 export async function probe(file: string): Promise<MediaInfo> {
   const json = JSON.parse(
-    await run("ffprobe", ["-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height", "-of", "json", file]),
+    await run("ffprobe", ["-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height,channels", "-of", "json", file]),
   );
-  const streams: { codec_type: string; width?: number; height?: number }[] = json.streams ?? [];
+  const streams: { codec_type: string; width?: number; height?: number; channels?: number }[] = json.streams ?? [];
   const video = streams.find((s) => s.codec_type === "video");
   return {
     duration: Number(json.format?.duration) || 0,
     hasAudio: streams.some((s) => s.codec_type === "audio"),
+    channels: streams.find((s) => s.codec_type === "audio")?.channels ?? 1,
     hasVideo: !!video,
     width: video?.width ?? 0,
     height: video?.height ?? 0,
@@ -44,7 +47,10 @@ export async function* pcmChunks(file: string, start = 0, end?: number): AsyncGe
   if (start > 0) args.push("-ss", String(start));
   args.push("-i", file);
   if (end !== undefined) args.push("-t", String(Math.max(0, end - start)));
-  args.push("-vn", "-ac", "1", "-ar", "16000", "-f", "f32le", "pipe:1");
+  // The app averages the channels (engine/downmix); ffmpeg's own mono mix adds them at 0.707 each, which is 1.41 times louder.
+  const channels = (await probe(file)).channels;
+  const mix = channels > 1 ? ["-af", `pan=mono|c0=${Array.from({ length: channels }, (_, i) => `${(1 / channels).toFixed(6)}*c${i}`).join("+")}`] : [];
+  args.push("-vn", ...mix, "-ac", "1", "-ar", "16000", "-f", "f32le", "pipe:1");
   const p = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
   let err = "";
   p.stderr.on("data", (d) => (err += d));

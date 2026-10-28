@@ -11,6 +11,7 @@ import { writeNumbers, type NumberMode } from "../../src/lib/numbers";
 import { BandTracker } from "../../src/render/aura";
 import { plainWord } from "../../src/punct/turkish";
 import { pcmChunks, probe } from "./audio";
+import type { Waveform } from "./project";
 import { formatter, speakerEmbedder, speechEngine, translator } from "./engines";
 import { SPEECH_MODELS, type ModelId, type MtPair } from "./models";
 import type { Transcript } from "./transcript";
@@ -19,7 +20,7 @@ export type Progress = (share: number, message?: string) => void;
 
 /** The app's three accuracy settings (Hızlı, Dengeli, En doğru) as Seda decoding. Whisper and Duyu ignore them. */
 export type Accuracy = "fast" | "balanced" | "best";
-const METHODS: Record<Accuracy, DecodingMethod> = { fast: "greedy", balanced: "beam", best: "beam-lm" };
+export const METHODS: Record<Accuracy, DecodingMethod> = { fast: "greedy", balanced: "beam", best: "beam-lm" };
 
 export interface TranscribeOptions {
   file: string;
@@ -148,4 +149,42 @@ export async function planCuts(t: Transcript, jc: Partial<JumpCut>) {
   const span = t.range ?? { start: 0, end: t.duration };
   const loudness = await loudnessOf(t.source, span.end);
   return findCuts(t.words, span, { ...DEFAULT_JUMP_CUT, ...jc, on: true }, loudness);
+}
+
+/** Peak amplitude per this many seconds, as the app's waveform (src/worker/protocol.ts). */
+const PEAK_STEP = 0.1;
+
+/** What a project file stores of the sound: peaks for the timeline, aura bands and speech loudness. Whole file, from 0. */
+export async function waveformOf(file: string, duration: number, progress: Progress): Promise<Waveform> {
+  const fb = new OnlineFbank(80);
+  const bands = new BandTracker();
+  const peaks = new Float32Array(Math.floor(duration / PEAK_STEP));
+  const bands_: Float32Array[] = [];
+  const loud: Float32Array[] = [];
+  const step = Math.round(16000 * PEAK_STEP);
+  let at = 0;
+  const take = () => {
+    fb.compute((f) => bands.push(f));
+    bands_.push(bands.take());
+    loud.push(bands.takeLoudness());
+  };
+  for await (const pcm of pcmChunks(file, 0, duration)) {
+    for (let i = 0; i < pcm.length; i++) {
+      const k = Math.floor((at + i) / step);
+      if (k < peaks.length) peaks[k] = Math.max(peaks[k], Math.abs(pcm[i]));
+    }
+    at += pcm.length;
+    fb.acceptWaveform(pcm);
+    take();
+    progress(Math.min(1, at / 16000 / Math.max(1, duration)), "ses okunuyor");
+  }
+  fb.inputFinished();
+  take();
+  const join = (parts: Float32Array[]) => {
+    const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
+    let o = 0;
+    for (const p of parts) (out.set(p, o), (o += p.length));
+    return out;
+  };
+  return { peaks, bands: join(bands_), loudness: join(loud) };
 }

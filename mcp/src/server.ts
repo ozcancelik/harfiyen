@@ -12,14 +12,18 @@ import { replaceRange } from "../../src/lib/edit";
 import { toJson, toSrt, toText, toVtt } from "../../src/lib/exporters";
 import { findMatches, replaceMatches } from "../../src/lib/find";
 import { clock } from "../../src/lib/format";
-import { labelWords, rename } from "../../src/lib/speakers";
+import { assign, labelWords, merge, rename } from "../../src/lib/speakers";
 import { parseSubtitles } from "../../src/lib/subtitles";
-import { shiftAll } from "../../src/lib/timing";
+import { retime, shiftAll, shiftSpan } from "../../src/lib/timing";
+import { writeNumbers } from "../../src/lib/numbers";
+import { sourceKey } from "../../src/lib/translation";
 import { renderCaptions, DEFAULT_CAPTIONS } from "./captions";
 import * as jobs from "./jobs";
+import { lookOf } from "./appstyle";
 import { BUNDLED } from "./fonts";
 import { installed, SPEECH_MODELS } from "./models";
-import { planCuts, tellSpeakers, transcribe, translate } from "./pipeline";
+import { METHODS, planCuts, punctuate, tellSpeakers, transcribe, translate, waveformOf } from "./pipeline";
+import { PROJECT_EXT, readProject, writeProject } from "./project";
 import { probe } from "./audio";
 import * as store from "./transcript";
 import type { Transcript } from "./transcript";
@@ -60,9 +64,12 @@ const view = (t: Transcript, language: "transcript" | "translation" = "transcrip
   return labelWords(t.words, t.speakers);
 };
 
+/** The translation was made from other words than the transcript has now (the app says the same). */
+const stale = (t: Transcript) => !!t.translation && t.translation.source !== sourceKey(t.words);
+
 const summary = (t: Transcript) =>
   `${t.id}  ${t.name}  ${t.words.length} kelime  ${clock(t.duration)}  ${t.lang}${t.model ? `  ${t.model}` : ""}` +
-  `${t.translation ? "  çeviri var" : ""}${t.speakers ? `  ${t.speakers.names.length} konuşmacı` : ""}`;
+  `${t.translation ? (stale(t) ? "  çeviri eski" : "  çeviri var") : ""}${t.speakers ? `  ${t.speakers.names.length} konuşmacı` : ""}`;
 
 function render(t: Transcript, format: "lines" | "text" | "srt" | "vtt" | "json", language: "transcript" | "translation"): string {
   const words = view(t, language);
@@ -133,6 +140,8 @@ server.registerTool(
         range: a.start !== undefined || a.end !== undefined ? { start: a.start ?? 0, end: Math.min(a.end ?? duration, duration) } : undefined,
         duration,
         model: SPEECH_MODELS[a.model].name,
+        modelId: a.model,
+        method: METHODS[a.accuracy],
         lang: a.lang,
         words,
       });
@@ -164,12 +173,82 @@ server.registerTool(
       const words = parseSubtitles(content);
       const source = a.source ? abs(a.source) : undefined;
       const duration = source ? (await probe(source)).duration : (words.at(-1)?.end ?? 0);
-      const t = store.create({ name: basename(a.path, extname(a.path)), source, duration, lang: a.lang, words });
+      const t = store.create({ name: basename(a.path, extname(a.path)), source, duration, lang: a.lang, words, imported: basename(a.path) });
       return text(summary(t));
     } catch (e) {
       return fail(e);
     }
   },
+);
+
+server.registerTool(
+  "import_project",
+  {
+    title: "Harfiyen projesi aç",
+    description:
+      "Web uygulamasında kaydedilmiş bir .harfiyen proje dosyasını transkript olarak açar: kelimeler, çeviri, konuşmacılar ve bölüm seçimi gelir. Medya dosyası projede yoktur; source verilmezse dosyanın yanında projenin kayıtlı medya adı aranır, bulunamazsa set_source ile verilir. Uygulamanın altyazı stili ve kadrajı saklanır, projeyi geri yazarken kaybolmaz.",
+    inputSchema: {
+      path: z.string().describe(".harfiyen dosyasının yolu"),
+      source: z.string().optional().describe("Projenin ses ya da video dosyası"),
+    },
+  },
+  async (a) => {
+    try {
+      const file = abs(a.path);
+      const t = store.create(readProject(readFileSync(file, "utf8"), file, a.source ? abs(a.source) : undefined));
+      const note = t.source ? "" : "\nMedya dosyası bulunamadı: konuşmacı ayırma, boşluk kesme ve video için set_source gerekir.";
+      return text(`${summary(t)}${note}`);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "set_source",
+  {
+    title: "Medya dosyasını bağla",
+    description: "Transkriptin ses ya da video dosyasını belirler (örneğin proje açılırken bulunamadıysa).",
+    inputSchema: { id: z.string(), source: z.string() },
+  },
+  async (a) => {
+    try {
+      const t = store.load(a.id);
+      const file = abs(a.source);
+      const info = await probe(file);
+      if (!info.hasAudio) throw new Error("Bu dosyada ses kanalı yok.");
+      t.source = file;
+      t.duration = info.duration;
+      store.save(t);
+      return text(`Bağlandı: ${file} (${clock(info.duration)})`);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "export_project",
+  {
+    title: "Harfiyen projesi olarak kaydet",
+    description:
+      "Transkripti web uygulamasının açabileceği bir .harfiyen proje dosyasına yazar. Medya dosyası projeye girmez; uygulamada projeyi açınca dosya yeniden bağlanır. Medya varsa ses dalgası ve aura verisi de hesaplanıp eklenir (bölüm seçilmiş transkriptlerde eklenmez).",
+    inputSchema: {
+      id: z.string(),
+      output: z.string().describe(`Yazılacak dosyanın yolu (${PROJECT_EXT})`),
+      waveform: z.boolean().default(true).describe("Medyadan dalga formu ve ses düzeyi hesapla"),
+      background: Background,
+    },
+  },
+  (a, extra) =>
+    heavy("export_project", extra as unknown as Extra, a.background, async (report) => {
+      const t = store.load(a.id);
+      const out = abs(a.output.endsWith(PROJECT_EXT) ? a.output : a.output + PROJECT_EXT);
+      const wave = a.waveform && t.source && !t.range ? await waveformOf(t.source, t.duration, report) : undefined;
+      mkdirSync(dirname(out), { recursive: true });
+      writeFileSync(out, writeProject(t, wave));
+      return `Yazıldı: ${out}${wave ? "" : "\nDalga formu eklenmedi; uygulama medya bağlanınca kendisi okur."}`;
+    }),
 );
 
 server.registerTool(
@@ -188,7 +267,9 @@ server.registerTool(
   },
   async (a) => {
     try {
-      return text(trimmed(render(store.load(a.id), a.format, a.language), a.max_chars));
+      const t = store.load(a.id);
+      const warn = a.language === "translation" && stale(t) ? "Not: Transkript çeviriden sonra değişti; çeviri eski. translate ile yenilenir.\n\n" : "";
+      return text(warn + trimmed(render(t, a.format, a.language), a.max_chars));
     } catch (e) {
       return fail(e);
     }
@@ -227,6 +308,7 @@ server.registerTool(
     try {
       const t = store.load(a.id);
       if (a.first >= t.words.length) throw new Error(`Kelime sırası ${a.first} aralık dışında (0..${t.words.length - 1}).`);
+      store.checkpoint(t, `edit_words ${a.first}..${a.first + a.count - 1}`);
       t.words = replaceRange(t.words, a.first, a.count, a.text);
       store.save(t);
       return text(`Güncellendi. ${summary(t)}`);
@@ -240,24 +322,57 @@ server.registerTool(
   "find_replace",
   {
     title: "Bul ve değiştir",
-    description: "Yanlış tanınan bir kelimeyi ya da ismi bütün transkriptte düzeltir. Büyük/küçük harfe bakmaz.",
+    description: "Yanlış tanınan bir kelimeyi ya da ismi bütün transkriptte (ya da çeviride) düzeltir. Büyük/küçük harfe bakmaz. Önce find_text ile nerede olduğuna bakılabilir.",
     inputSchema: {
       id: z.string(),
       query: z.string(),
       replacement: z.string(),
       whole_word: z.boolean().default(false),
+      language: Language,
       dry_run: z.boolean().default(false).describe("true: yalnızca kaç eşleşme olduğunu söyler"),
     },
   },
   async (a) => {
     try {
       const t = store.load(a.id);
-      const matches = findMatches(t.words, a.query, a.whole_word, t.lang);
+      const tr = a.language === "translation";
+      if (tr && !t.translation) throw new Error("Bu transkriptin çevirisi yok.");
+      const words = tr ? t.translation!.words : t.words;
+      const lang = tr ? t.translation!.lang : t.lang;
+      const matches = findMatches(words, a.query, a.whole_word, lang);
       if (!a.dry_run && matches.length) {
-        t.words = replaceMatches(t.words, matches, a.replacement, t.lang);
+        store.checkpoint(t, `find_replace "${a.query}" → "${a.replacement}"${tr ? " (çeviri)" : ""}`);
+        const next = replaceMatches(words, matches, a.replacement, lang);
+        if (tr) t.translation = { ...t.translation!, words: next };
+        else t.words = next;
         store.save(t);
       }
       return text(`${matches.length} eşleşme${a.dry_run || !matches.length ? "" : " değiştirildi"}.`);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "find_text",
+  {
+    title: "Metinde ara",
+    description: "Bir kelimeyi ya da ifadeyi transkriptte (ya da çeviride) arar; her eşleşmenin kelime aralığını, zamanını ve çevresindeki metni listeler. edit_words ve retime_words bu aralıklarla çalışır.",
+    inputSchema: { id: z.string(), query: z.string(), whole_word: z.boolean().default(false), language: Language, limit: z.number().int().min(1).max(200).default(50) },
+  },
+  async (a) => {
+    try {
+      const t = store.load(a.id);
+      const tr = a.language === "translation";
+      if (tr && !t.translation) throw new Error("Bu transkriptin çevirisi yok.");
+      const words = tr ? t.translation!.words : t.words;
+      const found = findMatches(words, a.query, a.whole_word, tr ? t.translation!.lang : t.lang);
+      const lines = found.slice(0, a.limit).map((m) => {
+        const around = words.slice(Math.max(0, m.first - 3), m.last + 4).map((w) => w.text).join(" ");
+        return `[${m.first}..${m.last}] ${clock(words[m.first].start)}  …${around}…`;
+      });
+      return text(`${found.length} eşleşme${found.length > a.limit ? ` (ilk ${a.limit} gösteriliyor)` : ""}.${lines.length ? `\n${lines.join("\n")}` : ""}`);
     } catch (e) {
       return fail(e);
     }
@@ -274,6 +389,7 @@ server.registerTool(
   async (a) => {
     try {
       const t = store.load(a.id);
+      store.checkpoint(t, `shift_timing ${a.seconds} sn`);
       t.words = shiftAll(t.words, a.seconds);
       if (t.translation) t.translation = { ...t.translation, words: shiftAll(t.translation.words, a.seconds) };
       store.save(t);
@@ -318,6 +434,7 @@ server.registerTool(
   (a, extra) =>
     heavy("translate", extra as unknown as Extra, a.background, async (report) => {
       const t = store.load(a.id);
+      store.checkpoint(t, "translate");
       t.translation = await translate(t, report);
       store.save(t);
       return `Çeviri hazır (${t.translation.lang}).\n${render(t, "lines", "translation").slice(0, 3000)}`;
@@ -334,6 +451,7 @@ server.registerTool(
   (a, extra) =>
     heavy("tell_speakers", extra as unknown as Extra, a.background, async (report) => {
       const t = store.load(a.id);
+      store.checkpoint(t, "tell_speakers");
       t.speakers = await tellSpeakers(t, a.speakers, report);
       store.save(t);
       return `${t.speakers.names.length} konuşmacı bulundu.\n${render(t, "lines", "transcript").slice(0, 3000)}`;
@@ -352,6 +470,7 @@ server.registerTool(
       const t = store.load(a.id);
       if (!t.speakers) throw new Error("Önce tell_speakers çalıştırılmalı.");
       if (a.speaker >= t.speakers.names.length) throw new Error(`Konuşmacı ${a.speaker} yok (0..${t.speakers.names.length - 1}).`);
+      store.checkpoint(t, `rename_speaker ${a.speaker}`);
       t.speakers = rename(t.speakers, a.speaker, a.name);
       store.save(t);
       return text(`Konuşmacılar: ${t.speakers.names.join(", ")}`);
@@ -384,33 +503,44 @@ server.registerTool(
     }),
 );
 
+/** The jump cut's settings for render_captions: left out, the project's (or the defaults) apply. */
+const JumpCutOptional = {
+  gap: z.number().min(0.1).optional().describe("Kesilecek en kısa sessizlik, saniye (varsayılan 0,6)"),
+  pad: z.number().min(0).optional().describe("Konuşmanın iki yanında kalan sessizlik, saniye (varsayılan 0,15)"),
+  fillers: z.boolean().optional().describe("\"ııı\", \"eee\", \"hmm\" gibi dolgu sesleri de kes (varsayılan açık)"),
+};
+
 server.registerTool(
   "render_captions",
   {
     title: "Altyazılı video",
     description:
-      "Altyazıyı videoya yazar (ffmpeg + libass). Stiller: klasik (koyu kutu), sade (gölgeli), karaoke (söylenen kelime renkle dolar), akis (kelimeler söylendikçe yerinde belirir), odak (bulanıktan netleşir), vurgu (söylenen kelime renkli işaretleyici), pop (ortada 3 iri zıplayan kelime), netles (ortada tek iri kelime bulanıktan netleşir), tek-kelime (ortada tek iri kelime). İstenirse boşlukları keser ve 9:16, 4:5, 1:1 ya da 16:9'a kırpar. Cam stili, aura ve kinetik tipografi yok; web uygulamasının dokuz stili var. Yalnızca ses dosyasında koyu bir zemin kullanılır.",
+      "Altyazıyı videoya yazar (ffmpeg + libass). Transkript web uygulamasının .harfiyen projesinden geldiyse (import_project) projenin altyazı stili, yazı tipi, renkleri, boyutu, kadrajı (kırpma kutusu ya da sığdırma, bulanık zemin) ve boşluk kesme ayarı varsayılan olarak kullanılır; verilen parametreler bunun üstüne yazar, use_project=false projeyi yok sayar. Stiller: klasik (koyu kutu), sade (gölgeli), karaoke (söylenen kelime renkle dolar), akis (kelimeler söylendikçe yerinde belirir), odak (bulanıktan netleşir), vurgu (söylenen kelime renkli işaretleyici), pop (ortada 3 iri zıplayan kelime), netles (ortada tek iri kelime bulanıktan netleşir), tek-kelime (ortada tek iri kelime). Cam stili, aura, logo ve kinetik tipografi yok; projede varsa cevapta not olarak bildirilir. Yalnızca ses dosyasında koyu bir zemin kullanılır.",
     inputSchema: {
       id: z.string(),
       output: z.string().describe("Yazılacak .mp4 dosyasının yolu"),
-      style: z.enum(["klasik", "sade", "karaoke", "akis", "odak", "vurgu", "pop", "netles", "tek-kelime"]).default(DEFAULT_CAPTIONS.style),
-      emphasis: z.boolean().default(false).describe("Sesle vurgula: çevresinden yüksek sesle söylenen kelimeler büyük (ve çoğu stilde vurgu renginde) yazılır"),
+      use_project: z.boolean().default(true).describe("Transkript bir Harfiyen projesinden geldiyse onun stilini ve kadrajını kullan"),
+      style: z.enum(["klasik", "sade", "karaoke", "akis", "odak", "vurgu", "pop", "netles", "tek-kelime"]).optional(),
+      emphasis: z.boolean().optional().describe("Sesle vurgula: çevresinden yüksek sesle söylenen kelimeler büyük (ve çoğu stilde vurgu renginde) yazılır"),
       language: Language,
       font: z
         .string()
-        .default(DEFAULT_CAPTIONS.font)
+        .optional()
         .describe(`Paketli yazı tiplerinden biri (${BUNDLED.map((f) => f.family).join(", ")}) ya da sistemde kurulu bir yazı tipi adı`),
       font_file: z.string().optional().describe("Kendi yazı tipin (TTF ya da OTF); verilirse font yerine bu kullanılır"),
       bold: z.boolean().optional().describe("Kalın; verilmezse yazı tipine göre (Anton, Bangers gibi tek kalınlıklılarda kapalı)"),
       uppercase: z.boolean().optional().describe("Türkçe kurala uygun büyük harf (i → İ); verilmezse yazı tipine göre (Luckiest Guy, Bangers, Bebas Neue yalnızca büyük harf bildiği için açık)"),
-      size: z.number().min(0.02).max(0.15).default(DEFAULT_CAPTIONS.size).describe("Yazı boyu, kare yüksekliğinin payı"),
-      position: z.enum(["alt", "orta", "ust"]).default(DEFAULT_CAPTIONS.position),
-      color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default(DEFAULT_CAPTIONS.color),
-      accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).default(DEFAULT_CAPTIONS.accent).describe("Vurgu rengi (karaoke dolgusu)"),
-      aspect: z.enum(["9:16", "4:5", "1:1", "16:9"]).optional().describe("Kadraj; verilmezse dosyanınki"),
-      fit: z.enum(["fill", "fit"]).default("fill").describe("fill: kareyi kapla, taşanı kes; fit: tamamı görünsün, boşluk siyah"),
-      jump_cut: z.boolean().default(false).describe("Sessizlikleri ve dolgu seslerini videodan çıkar"),
-      ...JumpCutShape,
+      size: z.number().min(0.02).max(0.15).optional().describe("Yazı boyu, kare yüksekliğinin payı; büyük stiller (pop, tek-kelime, netles) bunu ayrıca büyütür"),
+      position: z.enum(["alt", "orta", "ust"]).optional().describe("Verilmezse stile göre: tek kelimelik stiller ortada, diğerleri altta"),
+      text_background: z.enum(["box", "outline", "shadow"]).optional().describe("Yazının zemini: koyu kutu, kontur ya da gölge"),
+      color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+      accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Vurgu rengi (karaoke dolgusu, vurgu kutusu)"),
+      speaker_names: z.boolean().optional().describe("Konuşan değişince adı yazılsın (varsayılan: proje ne diyorsa, yoksa açık)"),
+      aspect: z.enum(["9:16", "4:5", "1:1", "16:9"]).optional().describe("Kadraj; verilirse projenin kırpma kutusu yok sayılır ve ortadan kırpılır"),
+      fit: z.enum(["fill", "fit"]).optional().describe("fill: kareyi kapla, taşanı kes; fit: tamamı görünsün, boşluk siyah ya da bulanık"),
+      backdrop: z.enum(["black", "blur"]).optional().describe("fit'te görüntünün çevresi: siyah ya da görüntünün kendisi bulanık"),
+      jump_cut: z.boolean().optional().describe("Sessizlikleri ve dolgu seslerini videodan çıkar; verilmezse projenin ayarı"),
+      ...JumpCutOptional,
       codec: z.enum(["h264", "hevc"]).default("h264"),
       crf: z.number().int().min(10).max(35).default(20).describe("Kalite; düşük daha iyi"),
       width: z.number().int().min(240).max(3840).optional().describe("Çıkış genişliği, piksel"),
@@ -420,16 +550,48 @@ server.registerTool(
   (a, extra) =>
     heavy("render_captions", extra as unknown as Extra, a.background, async (report) => {
       const t = store.load(a.id);
+      const look = a.use_project ? lookOf(t.app) : lookOf(undefined);
+      // The project's size, position and background belong to its own style: with another style asked for, they are left out.
+      const ownStyle = a.style === undefined || a.style === look.style;
+      const fromProject = ownStyle ? look.captions : { ...look.captions, size: undefined, sizeBasis: undefined, position: undefined, background: undefined };
+      const size =
+        a.size !== undefined
+          ? { size: a.size }
+          : fromProject.size !== undefined
+            ? { size: fromProject.size, sizeBasis: fromProject.sizeBasis }
+            : { size: DEFAULT_CAPTIONS.size };
+      // A ratio asked for here replaces the project's crop; a fit asked for drops the crop box (a box is a fill).
+      const ownCrop = a.aspect === undefined;
+      const fit = a.fit ?? (ownCrop ? look.fit : undefined) ?? "fill";
+      const jumpCut =
+        a.jump_cut === false
+          ? undefined
+          : a.jump_cut === true || look.jumpCut
+            ? { gap: a.gap ?? look.jumpCut?.gap, pad: a.pad ?? look.jumpCut?.pad, fillers: a.fillers ?? look.jumpCut?.fillers }
+            : undefined;
       const r = await renderCaptions(
         t,
         {
           output: abs(a.output),
-          captions: { style: a.style, font: a.font, bold: a.bold, uppercase: a.uppercase, size: a.size, position: a.position, color: a.color, accent: a.accent },
-          emphasis: a.emphasis,
+          captions: {
+            style: a.style ?? look.style ?? DEFAULT_CAPTIONS.style,
+            font: a.font ?? look.captions.font ?? DEFAULT_CAPTIONS.font,
+            bold: a.bold,
+            uppercase: a.uppercase ?? look.captions.uppercase,
+            ...size,
+            position: a.position ?? fromProject.position,
+            background: a.text_background ?? fromProject.background,
+            color: a.color ?? look.captions.color ?? DEFAULT_CAPTIONS.color,
+            accent: a.accent ?? look.captions.accent ?? DEFAULT_CAPTIONS.accent,
+          },
+          emphasis: a.emphasis ?? look.emphasis ?? false,
+          speakerNames: a.speaker_names ?? look.speakerNames,
           fontFile: a.font_file ? abs(a.font_file) : undefined,
-          aspect: a.aspect,
-          fit: a.fit,
-          jumpCut: a.jump_cut ? { gap: a.gap, pad: a.pad, fillers: a.fillers } : undefined,
+          aspect: a.aspect ?? (ownCrop ? look.aspect : undefined),
+          fit,
+          backdrop: a.backdrop ?? (ownCrop ? look.backdrop : undefined),
+          cropBox: ownCrop && fit === "fill" ? look.cropBox : undefined,
+          jumpCut,
           language: a.language,
           codec: a.codec,
           crf: a.crf,
@@ -437,8 +599,209 @@ server.registerTool(
         },
         report,
       );
-      return `Yazıldı: ${r.output}\n${r.size}, ${r.seconds.toFixed(1)} sn${r.cuts ? `, ${r.cuts} kesim` : ""}`;
+      const given = [
+        a.style === undefined && look.used.style,
+        ownCrop && a.fit === undefined && look.used.crop,
+        a.jump_cut === undefined && look.used.jumpCut,
+      ].filter(Boolean);
+      const used = given.length ? `\nProjeden: ${given.join(", ")}` : "";
+      const notes = look.notes.map((n) => `\nNot: ${n}`).join("");
+      return `Yazıldı: ${r.output}\n${r.size}, ${r.seconds.toFixed(1)} sn${r.cuts ? `, ${r.cuts} kesim` : ""}${used}${notes}`;
     }),
+);
+
+server.registerTool(
+  "retime_words",
+  {
+    title: "Kelime zamanını düzelt",
+    description:
+      "Bir satırın ya da tek kelimenin zamanını değiştirir (get_transcript lines ya da find_text'teki [ilk..son] aralığıyla). Ya yeni start ve end saniyesi verilir, ya da shift ile olduğu gibi öne (−) ya da geriye (+) kaydırılır. Zamanlar önceki ve sonraki kelimeleri geçmez; bitişik kelime aradaki sınırla birlikte uzar ya da kısalır.",
+    inputSchema: {
+      id: z.string(),
+      first: z.number().int().min(0),
+      count: z.number().int().min(1).default(1),
+      start: z.number().min(0).optional().describe("Yeni başlangıç, saniye"),
+      end: z.number().min(0).optional().describe("Yeni bitiş, saniye"),
+      shift: z.number().optional().describe("Süresini değiştirmeden kaydır, saniye"),
+    },
+  },
+  async (a) => {
+    try {
+      const t = store.load(a.id);
+      if (a.first + a.count > t.words.length) throw new Error(`Aralık ${a.first}..${a.first + a.count - 1} dışarıda (0..${t.words.length - 1}).`);
+      if (a.shift === undefined && a.start === undefined && a.end === undefined) throw new Error("start, end ya da shift verilmeli.");
+      const w0 = t.words[a.first];
+      const w1 = t.words[a.first + a.count - 1];
+      store.checkpoint(t, `retime_words ${a.first}..${a.first + a.count - 1}`);
+      t.words = a.shift !== undefined ? shiftSpan(t.words, a.first, a.count, a.shift) : retime(t.words, a.first, a.count, a.start ?? w0.start, a.end ?? w1.end);
+      store.save(t);
+      const n0 = t.words[a.first];
+      const n1 = t.words[a.first + a.count - 1];
+      return text(`${w0.start.toFixed(2)}–${w1.end.toFixed(2)} → ${n0.start.toFixed(2)}–${n1.end.toFixed(2)} sn`);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "edit_translation",
+  {
+    title: "Çeviriyi düzelt",
+    description: "get_transcript'in language=translation çıktısındaki [ilk..son] aralığındaki çeviri kelimelerini verilen metinle değiştirir. Boş metin siler.",
+    inputSchema: { id: z.string(), first: z.number().int().min(0), count: z.number().int().min(1), text: z.string() },
+  },
+  async (a) => {
+    try {
+      const t = store.load(a.id);
+      if (!t.translation) throw new Error("Bu transkriptin çevirisi yok.");
+      if (a.first >= t.translation.words.length) throw new Error(`Kelime sırası ${a.first} aralık dışında (0..${t.translation.words.length - 1}).`);
+      store.checkpoint(t, `edit_translation ${a.first}..${a.first + a.count - 1}`);
+      t.translation = { ...t.translation, words: replaceRange(t.translation.words, a.first, a.count, a.text) };
+      store.save(t);
+      return text(`Güncellendi. ${summary(t)}`);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "assign_speaker",
+  {
+    title: "Konuşmacı ata",
+    description:
+      "Bir satırı ya da zaman aralığını bir konuşmacıya verir (kelime aralığı first+count ya da start+end saniye). speaker mevcut bir konuşmacının sırasıdır; yeni bir kişi için konuşmacı sayısına eşit bir sıra verilir (name ile adlanır). tell_speakers'ın yanlış böldüğü yeri düzeltir; konuşmacı hiç ayrılmamışsa elle de başlanabilir.",
+    inputSchema: {
+      id: z.string(),
+      speaker: z.number().int().min(0),
+      first: z.number().int().min(0).optional(),
+      count: z.number().int().min(1).default(1),
+      start: z.number().min(0).optional(),
+      end: z.number().min(0).optional(),
+      name: z.string().optional().describe("Yeni konuşmacının adı"),
+    },
+  },
+  async (a) => {
+    try {
+      const t = store.load(a.id);
+      let start = a.start;
+      let end = a.end;
+      if (a.first !== undefined) {
+        if (a.first + a.count > t.words.length) throw new Error(`Aralık ${a.first}..${a.first + a.count - 1} dışarıda (0..${t.words.length - 1}).`);
+        start = t.words[a.first].start;
+        end = t.words[a.first + a.count - 1].end;
+      }
+      if (start === undefined || end === undefined || end <= start) throw new Error("Bir kelime aralığı (first, count) ya da zaman aralığı (start, end) verilmeli.");
+      const sp = t.speakers ?? { names: [], turns: [] };
+      if (a.speaker > sp.names.length) throw new Error(`Konuşmacı ${a.speaker} yok; yeni kişi için ${sp.names.length} verilmeli (0..${sp.names.length - 1} mevcut).`);
+      store.checkpoint(t, `assign_speaker ${a.speaker} ${start.toFixed(1)}–${end.toFixed(1)}`);
+      let next = assign(sp, start, end, a.speaker);
+      // Unused speakers are dropped and the rest renumbered, so the new one is found by the turn it was given.
+      const given = next.turns.find((x) => x.start <= start! + 1e-6 && x.end >= end! - 1e-6)?.speaker;
+      if (a.name && given !== undefined) next = rename(next, given, a.name);
+      t.speakers = next;
+      store.save(t);
+      return text(`Konuşmacılar: ${next.names.join(", ")}`);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "merge_speakers",
+  {
+    title: "Konuşmacıları birleştir",
+    description: "Aynı kişi iki kez çıktıysa birini ötekine katar: from'un bütün konuşmaları into'nun olur, from silinir ve sonrakiler yeniden numaralanır.",
+    inputSchema: { id: z.string(), from: z.number().int().min(0), into: z.number().int().min(0) },
+  },
+  async (a) => {
+    try {
+      const t = store.load(a.id);
+      if (!t.speakers) throw new Error("Önce tell_speakers çalıştırılmalı.");
+      const n = t.speakers.names.length;
+      if (a.from >= n || a.into >= n || a.from === a.into) throw new Error(`Geçersiz konuşmacılar: 0..${n - 1} arasında, birbirinden farklı iki sıra verilmeli.`);
+      store.checkpoint(t, `merge_speakers ${a.from} → ${a.into}`);
+      t.speakers = merge(t.speakers, a.from, a.into);
+      store.save(t);
+      return text(`Konuşmacılar: ${t.speakers.names.join(", ")}`);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "apply_numbers",
+  {
+    title: "Sayı yazımı",
+    description: "Transkriptteki sayıları seçilen biçimde yazar: rule (1–9 yazıyla, 10 ve üstü rakamla, TDK'ya göre), all (hepsi rakamla) ya da keep (dokunma). Metni düzelttikten sonra yeniden uygulamak için. Yalnızca Türkçe transkriptte çalışır.",
+    inputSchema: { id: z.string(), mode: z.enum(["rule", "all", "keep"]).default("rule") },
+  },
+  async (a) => {
+    try {
+      const t = store.load(a.id);
+      if (t.lang !== "tr") throw new Error("Sayı kuralları Türkçe transkript içindir.");
+      store.checkpoint(t, `apply_numbers ${a.mode}`);
+      const next = writeNumbers(t.words, a.mode);
+      t.words = next;
+      store.save(t);
+      return text(`${a.mode}: ${next.length} kelime.`);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "punctuate",
+  {
+    title: "Noktalama ve büyük harf",
+    description: "Transkripti yeniden noktalar ve büyük harfle yazar (Seda'nın formatter modeliyle), sonra sayıları yazar. Metni elle düzelttikten sonra ya da noktalamasız kalmış bir transkriptte kullanılır. Yalnızca Türkçe transkriptte çalışır.",
+    inputSchema: { id: z.string(), numbers: z.enum(["rule", "all", "keep"]).default("rule"), background: Background },
+  },
+  (a, extra) =>
+    heavy("punctuate", extra as unknown as Extra, a.background, async (report) => {
+      const t = store.load(a.id);
+      if (t.lang !== "tr") throw new Error("Noktalama modeli Türkçe içindir.");
+      report(0, "noktalama modeli yükleniyor");
+      const written = await punctuate(t.words, report);
+      store.checkpoint(t, "punctuate");
+      t.words = writeNumbers(written, a.numbers);
+      store.save(t);
+      return `Noktalandı. ${summary(t)}\n${render(t, "lines", "transcript").slice(0, 3000)}`;
+    }),
+);
+
+server.registerTool(
+  "undo",
+  {
+    title: "Geri al",
+    description: "Transkriptteki son düzenlemeyi (ya da son steps düzenlemeyi) geri alır: kelimeler, zamanlar, çeviri ve konuşmacılar önceki hâline döner. Son 20 düzenleme saklanır.",
+    inputSchema: { id: z.string(), steps: z.number().int().min(1).max(20).default(1) },
+  },
+  async (a) => {
+    try {
+      const labels = store.undo(a.id, a.steps);
+      return text(`Geri alındı: ${labels.join(", ")}\n${summary(store.load(a.id))}`);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "history",
+  {
+    title: "Düzenleme geçmişi",
+    description: "Geri alınabilecek düzenlemeleri, en yenisi önce, listeler.",
+    inputSchema: { id: z.string() },
+  },
+  async (a) => {
+    const h = store.history(a.id);
+    return text(h.length ? h.map((x, i) => `${i + 1}. ${x.label}  (${x.at.slice(0, 19).replace("T", " ")})`).join("\n") : "Geri alınacak bir düzenleme yok.");
+  },
 );
 
 server.registerTool(

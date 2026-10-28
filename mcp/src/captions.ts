@@ -26,9 +26,16 @@ export interface CaptionOptions {
   bold?: boolean;
   /** Turkish capitals (i → İ); missing: on for fonts that only have capitals. */
   uppercase?: boolean;
-  /** Text height as a share of the frame height. */
+  /**
+   * Text size as a share of the frame height, times the style's own scale (the big styles are bigger). With
+   * `sizeBasis: "short"` it is the web app's size: a share of the shorter side, final as it is.
+   */
   size: number;
-  position: Position;
+  sizeBasis?: "short";
+  /** Missing: the style's own (the one-word styles in the middle, the rest at the bottom). */
+  position?: Position;
+  /** What the text stands on; missing: a box for klasik, an outline for the rest. */
+  background?: "box" | "outline" | "shadow";
   /** "#RRGGBB" */
   color: string;
   accent: string;
@@ -38,7 +45,6 @@ export const DEFAULT_CAPTIONS: CaptionOptions = {
   style: "sade",
   font: "Montserrat",
   size: 0.045,
-  position: "alt",
   color: "#FFFFFF",
   accent: "#FFD400",
 };
@@ -91,16 +97,18 @@ const PER_WORD = new Set<CaptionStyle>(["akis", "odak", "vurgu", "pop", "netles"
 
 /** The ASS file for words at output time on a w x h frame. */
 export function toAss(words: CaptionWord[], speakers: string[] | undefined, w: number, h: number, o: CaptionOptions): string {
-  const px = Math.round(h * o.size * (SCALE[o.style] ?? 1));
-  const align = CENTERED.has(o.style) ? 5 : { alt: 2, orta: 5, ust: 8 }[o.position];
+  const px = o.sizeBasis === "short" ? Math.round(Math.min(w, h) * o.size) : Math.round(h * o.size * (SCALE[o.style] ?? 1));
+  const align = { alt: 2, orta: 5, ust: 8 }[o.position ?? (CENTERED.has(o.style) ? "orta" : "alt")];
   const margin = Math.round(h * 0.07);
-  const box = o.style === "klasik";
+  const background = o.background ?? (o.style === "klasik" ? "box" : "outline");
+  const box = background === "box";
   // Karaoke fills from the secondary to the primary colour.
   const primary = o.style === "karaoke" ? assColor(o.accent) : assColor(o.color);
   const secondary = o.style === "karaoke" ? assColor(o.color) : assColor(o.accent);
-  const outline = box ? assColor("#000000", 0x66) : assColor("#000000");
-  const border = box ? Math.round(px * 0.35) : Math.max(2, Math.round(px * 0.08));
-  const shadow = box ? 0 : Math.max(1, Math.round(px * 0.04));
+  // A shadow without an outline is a soft dark halo; an outline is solid.
+  const outline = box ? assColor("#000000", 0x66) : background === "shadow" ? assColor("#000000", 0x99) : assColor("#000000");
+  const border = box ? Math.round(px * 0.35) : background === "shadow" ? Math.max(2, Math.round(px * 0.05)) : Math.max(2, Math.round(px * 0.08));
+  const shadow = box ? 0 : background === "shadow" ? Math.max(2, Math.round(px * 0.07)) : Math.max(1, Math.round(px * 0.04));
   const black = assColor("#000000");
   const base = assColor(o.color);
   // How many characters fit a line: a bold letter is about 0.6 of the text height wide, and the margins take 12%.
@@ -215,8 +223,14 @@ export interface RenderOptions {
   captions: CaptionOptions;
   /** Crop or fit to this ratio; missing keeps the file's. */
   aspect?: Aspect;
-  /** "fill" crops the picture to the ratio, "fit" keeps all of it with black bars. */
+  /** "fill" crops the picture to the ratio, "fit" keeps all of it with bars. */
   fit: "fill" | "fit";
+  /** What shows around a fitted picture. */
+  backdrop?: "black" | "blur";
+  /** The slice of the picture to keep, as fractions of it (fill); missing crops the middle. */
+  cropBox?: { x: number; y: number; w: number; h: number };
+  /** Names of the speakers above their lines; false leaves them out. */
+  speakerNames?: boolean;
   /** Takes quiet stretches out of the video. */
   jumpCut?: Partial<JumpCut>;
   /** "Sesle vurgula": words said louder than their surroundings are drawn bigger. */
@@ -234,18 +248,34 @@ export interface RenderOptions {
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
-/** Output frame size from the source's and the ratio. */
-function frameSize(srcW: number, srcH: number, o: RenderOptions) {
-  if (!o.aspect) return { w: even(srcW), h: even(srcH) };
+interface Geometry {
+  /** The frame the captions are drawn on. */
+  size: { w: number; h: number };
+  /** The slice of the picture kept, in pixels; missing: the middle, or all of it. */
+  crop?: { x: number; y: number; w: number; h: number };
+}
+
+/** Output frame and crop from the source's size and the options. */
+function geometry(srcW: number, srcH: number, o: RenderOptions): Geometry {
+  if (o.cropBox && o.fit === "fill") {
+    const x = Math.min(Math.max(0, Math.round(o.cropBox.x * srcW)), srcW - 2);
+    const y = Math.min(Math.max(0, Math.round(o.cropBox.y * srcH)), srcH - 2);
+    // Even sizes, inside the picture.
+    const w = Math.max(2, Math.min(srcW - x, Math.floor((o.cropBox.w * srcW) / 2) * 2));
+    const h = Math.max(2, Math.min(srcH - y, Math.floor((o.cropBox.h * srcH) / 2) * 2));
+    return { size: { w, h }, crop: { x, y, w, h } };
+  }
+  if (!o.aspect) return { size: { w: even(srcW), h: even(srcH) } };
   const [a, b] = o.aspect.split(":").map(Number);
   const r = a / b;
   // Fill crops to the ratio, fit adds bars around the whole picture.
   const crop = (srcW / srcH > r) === (o.fit === "fill");
-  return crop ? { w: even(srcH * r), h: even(srcH) } : { w: even(srcW), h: even(srcW / r) };
+  return { size: crop ? { w: even(srcH * r), h: even(srcH) } : { w: even(srcW), h: even(srcW / r) } };
 }
 
 /** Filter graph pieces: the kept parts joined, then the picture shaped, then captions. */
-function graph(parts: Kept[], hasVideo: boolean, size: { w: number; h: number }, out: { w: number; h: number }, o: RenderOptions, ass: string, fonts: string) {
+function graph(parts: Kept[], hasVideo: boolean, g: Geometry, out: { w: number; h: number }, o: RenderOptions, ass: string, fonts: string) {
+  const { size } = g;
   const pieces: string[] = [];
   const joined: string[] = [];
   parts.forEach((p, i) => {
@@ -258,15 +288,30 @@ function graph(parts: Kept[], hasVideo: boolean, size: { w: number; h: number },
     joined.push(`[a${i}]`);
   });
   pieces.push(`${joined.join("")}concat=n=${parts.length}:v=${hasVideo ? 1 : 0}:a=1${hasVideo ? "[vc]" : ""}[ac]`);
+  let from = hasVideo ? "[vc]" : "[1:v]";
   const shape: string[] = [];
-  if (hasVideo && o.aspect) {
+  if (hasVideo && g.crop) {
+    shape.push(`crop=${g.crop.w}:${g.crop.h}:${g.crop.x}:${g.crop.y}`);
+  } else if (hasVideo && o.aspect) {
     if (o.fit === "fill") shape.push(`crop=${size.w}:${size.h}`);
-    else shape.push(`scale=${size.w}:${size.h}:force_original_aspect_ratio=decrease`, `pad=${size.w}:${size.h}:(ow-iw)/2:(oh-ih)/2:black`);
+    else if (o.backdrop === "blur") {
+      // The picture itself, enlarged to cover the frame and blurred, with the whole picture over it.
+      const radius = Math.max(4, Math.round(Math.min(size.w, size.h) / 30));
+      pieces.push(
+        `${from}split=2[bg][fg]`,
+        `[bg]scale=${size.w}:${size.h}:force_original_aspect_ratio=increase,crop=${size.w}:${size.h},boxblur=${radius}:3[bb]`,
+        `[fg]scale=${size.w}:${size.h}:force_original_aspect_ratio=decrease[ff]`,
+        `[bb][ff]overlay=(W-w)/2:(H-h)/2[fit]`,
+      );
+      from = "[fit]";
+    } else {
+      shape.push(`scale=${size.w}:${size.h}:force_original_aspect_ratio=decrease`, `pad=${size.w}:${size.h}:(ow-iw)/2:(oh-ih)/2:black`);
+    }
   }
   if (out.w !== size.w) shape.push(`scale=${out.w}:${out.h}`);
   const quote = (p: string) => p.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
   shape.push(`ass='${quote(ass)}':fontsdir='${quote(fonts)}'`);
-  pieces.push(`${hasVideo ? "[vc]" : "[1:v]"}${shape.join(",")}[v]`);
+  pieces.push(`${from}${shape.join(",")}[v]`);
   return pieces.join(";");
 }
 
@@ -289,7 +334,8 @@ export async function renderCaptions(t: Transcript, o: RenderOptions, progress: 
   const length = keptLength(parts);
 
   const src = info.hasVideo ? { w: info.width, h: info.height } : { w: 1920, h: 1080 };
-  const size = frameSize(src.w, src.h, o);
+  const g = geometry(src.w, src.h, o);
+  const size = g.size;
   // The exact ratio, not the crop's rounded one: 720 wide at 9:16 is 1280 high, not 1278.
   const ratio = o.aspect ? o.aspect.split(":").map(Number) : [size.w, size.h];
   const out = o.width ? { w: even(o.width), h: even((o.width * ratio[1]) / ratio[0]) } : size;
@@ -308,8 +354,8 @@ export async function renderCaptions(t: Transcript, o: RenderOptions, progress: 
       const loud = loudWords(words, await loudnessOf(t.source, span.end));
       marked = words.map((x) => (loud.has(x) ? { ...x, loud: true as const } : x));
     }
-    writeFileSync(ass, toAss(wordsThrough(marked, span, cuts) as CaptionWord[], t.speakers?.names, out.w, out.h, style));
-    const filter = graph(parts, info.hasVideo, size, out, o, ass, fonts);
+    writeFileSync(ass, toAss(wordsThrough(marked, span, cuts) as CaptionWord[], o.speakerNames === false ? undefined : t.speakers?.names, out.w, out.h, style));
+    const filter = graph(parts, info.hasVideo, g, out, o, ass, fonts);
     const script = join(dir, "graph.txt");
     // A jump cut is a filter per part: long graphs go in a file, not on the command line.
     const filterArgs = filter.length > 20_000 ? (writeFileSync(script, filter), ["-/filter_complex", script]) : ["-filter_complex", filter];
