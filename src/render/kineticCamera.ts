@@ -100,6 +100,10 @@ const inOut = (x: number) => {
   const t = clamp01(x);
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 };
+const smoothBack = (x: number, k = 1.1) => {
+  const t = clamp01(x);
+  return Math.sin((t * Math.PI) / 2) * backOut(t, k);
+};
 
 /** Text measurer: width of the text at REF px, and the cap height at REF px. */
 export interface Measure {
@@ -276,7 +280,7 @@ export function buildCameraWorld(
     });
     b.lines.forEach((l, k) => {
       if (k === 0) return;
-      raw.push({ start: l.items[0].word.start - 0.14, dur: 0.42, to: lineState(b, k), ease: (p) => backOut(p, 1.1), breath: 0 });
+      raw.push({ start: l.items[0].word.start - 0.14, dur: 0.42, to: lineState(b, k), ease: (p) => smoothBack(p, 1.1), breath: 0 });
     });
     // Back over the whole block, when there is time before the next phrase.
     const next = blocks[i + 1];
@@ -352,26 +356,41 @@ export function lineAt(line: CamLine, t: number): { items: PlacedItem[]; h: numb
   let n = 0;
   while (n < line.items.length && line.items[n].word.start - WORD_LEAD <= t) n++;
   if (!n) return null;
-  const cur = line.layouts[n - 1];
-  const newest = line.items[n - 1];
-  const q = (t - (newest.word.start - WORD_LEAD)) / PUSH_DUR;
-  if (q >= 1 || n === 1) {
-    const e = n === 1 ? backOut(q, 1.2) : 1;
-    return {
-      items: line.items.slice(0, n).map((item, i) => ({ item, x: cur.xs[i], s: cur.s, enter: i === n - 1 ? clamp01(e) : 1 })),
-      h: cur.h,
-    };
+  if (n === 1) {
+    const cur = line.layouts[0];
+    const q = (t - (line.items[0].word.start - WORD_LEAD)) / PUSH_DUR;
+    const e = q >= 1 ? 1 : clamp01(backOut(q, 1.2));
+    return { items: [{ item: line.items[0], x: cur.xs[0], s: cur.s, enter: e }], h: cur.h };
   }
-  // A loud word shoves harder.
-  const e = backOut(q, newest.loud ? 2.4 : 1.5);
-  const prev = line.layouts[n - 2];
-  const s = prev.s + (cur.s - prev.s) * e;
+  // Accumulate each word's push in order so rapid words (< PUSH_DUR apart) never snap when the next word enters.
+  let s = line.layouts[0].s;
+  let h = line.layouts[0].h;
+  const xs = new Array<number>(n);
+  const enters = new Array<number>(n);
+  xs[0] = line.layouts[0].xs[0];
+  const q0 = (t - (line.items[0].word.start - WORD_LEAD)) / PUSH_DUR;
+  enters[0] = q0 >= 1 ? 1 : clamp01(backOut(q0, 1.2));
+  for (let k = 1; k < n; k++) {
+    const target = line.layouts[k];
+    const item = line.items[k];
+    const q = (t - (item.word.start - WORD_LEAD)) / PUSH_DUR;
+    if (q >= 1) {
+      s = target.s;
+      h = target.h;
+      for (let i = 0; i <= k; i++) xs[i] = target.xs[i];
+      enters[k] = 1;
+    } else {
+      // A loud word shoves harder.
+      const e = backOut(q, item.loud ? 2.4 : 1.5);
+      s += (target.s - s) * e;
+      h += (target.h - h) * e;
+      for (let i = 0; i < k; i++) xs[i] += (target.xs[i] - xs[i]) * e;
+      xs[k] = target.xs[k];
+      enters[k] = clamp01(q * 1.4);
+    }
+  }
   return {
-    items: line.items.slice(0, n).map((item, i) =>
-      i < n - 1
-        ? { item, x: prev.xs[i] + (cur.xs[i] - prev.xs[i]) * e, s, enter: 1 }
-        : { item, x: cur.xs[i], s: cur.s, enter: clamp01(q * 1.4) },
-    ),
-    h: prev.h + (cur.h - prev.h) * e,
+    items: line.items.slice(0, n).map((item, i) => ({ item, x: xs[i], s, enter: enters[i] })),
+    h,
   };
 }

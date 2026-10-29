@@ -1261,16 +1261,23 @@ export class KineticRenderer {
 
     const short = Math.min(W, H);
     const cam = cameraAt(world, t);
-    // A stressed syllable jolts the camera (a function of t, so the export matches).
-    const n = Math.floor(t * 24);
-    const jolt = punch * short * 0.012;
+    // A stressed syllable gently shakes the camera (smoothly interpolated so it never teleports between frames).
+    const jolt = punch * short * 0.009;
     const rnd = (x: number) => {
       const v = Math.sin(x * 12.9898) * 43758.5453;
       return v - Math.floor(v) - 0.5;
     };
+    const smoothRnd = (x: number) => {
+      const i = Math.floor(x);
+      const f = x - i;
+      const u = f * f * (3 - 2 * f);
+      return rnd(i) + (rnd(i + 1) - rnd(i)) * u;
+    };
+    const jx = smoothRnd(t * 14) * jolt;
+    const jy = smoothRnd(t * 14 + 7.3) * jolt;
     const view = (c: CamState) => {
       const zoom = c.zoom * (1 + energy * 0.03);
-      ctx.translate(W / 2 + rnd(n) * jolt, H / 2 + rnd(n + 7.3) * jolt);
+      ctx.translate(W / 2 + jx, H / 2 + jy);
       ctx.scale(zoom, zoom);
       ctx.rotate(-c.angle);
       ctx.translate(-c.x, -c.y);
@@ -1303,15 +1310,10 @@ export class KineticRenderer {
       Math.abs(Math.log(cam.zoom / before.zoom)) * short;
     const smear = Math.min(1, Math.max(0, (moved - short * 0.02) / (short * 0.06)));
     if (smear > 0) {
-      for (const [dt, a] of [
-        [1 / 40, 0.3],
-        [1 / 20, 0.15],
-      ]) {
-        ctx.save();
-        view(cameraAt(world, t - dt));
-        this.drawCameraWords(ctx, pal, world, cur, t, fade * a * smear, css);
-        ctx.restore();
-      }
+      ctx.save();
+      view(cameraAt(world, t - 1 / 35));
+      this.drawCameraWords(ctx, pal, world, cur, t, fade * 0.28 * smear, css);
+      ctx.restore();
     }
     ctx.save();
     view(cam);

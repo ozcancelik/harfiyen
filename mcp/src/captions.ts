@@ -19,6 +19,15 @@ import type { JumpCut } from "../../src/lib/cuts";
 export type CaptionStyle = "klasik" | "sade" | "karaoke" | "akis" | "odak" | "vurgu" | "pop" | "netles" | "tek-kelime";
 export type Aspect = "9:16" | "4:5" | "1:1" | "16:9";
 export type Position = "alt" | "orta" | "ust";
+export type CropPosition = "orta" | "sol" | "sag" | "ust" | "alt";
+
+export const CROP_CENTER: Record<CropPosition, { cx: number; cy: number }> = {
+  orta: { cx: 0.5, cy: 0.5 },
+  sol: { cx: 0, cy: 0.5 },
+  sag: { cx: 1, cy: 0.5 },
+  ust: { cx: 0.5, cy: 0 },
+  alt: { cx: 0.5, cy: 1 },
+};
 
 export interface CaptionOptions {
   style: CaptionStyle;
@@ -230,6 +239,8 @@ export interface RenderOptions {
   backdrop?: "black" | "blur";
   /** The slice of the picture to keep, as fractions of it (fill); missing crops the middle. */
   cropBox?: { x: number; y: number; w: number; h: number };
+  /** Where to place the crop slice when filling an aspect ratio (default: orta). */
+  cropPosition?: CropPosition;
   /** Names of the speakers above their lines; false leaves them out. */
   speakerNames?: boolean;
   /** Leave captions out of the video (a dub-only or jump-cut video). */
@@ -279,7 +290,14 @@ function geometry(srcW: number, srcH: number, o: RenderOptions): Geometry {
   const r = a / b;
   // Fill crops to the ratio, fit adds bars around the whole picture.
   const crop = (srcW / srcH > r) === (o.fit === "fill");
-  return { size: crop ? { w: even(srcH * r), h: even(srcH) } : { w: even(srcW), h: even(srcW / r) } };
+  const size = crop ? { w: even(srcH * r), h: even(srcH) } : { w: even(srcW), h: even(srcW / r) };
+  if (o.fit === "fill" && o.cropPosition && o.cropPosition !== "orta") {
+    const { cx, cy } = CROP_CENTER[o.cropPosition];
+    const x = Math.min(Math.max(0, Math.round(cx * srcW - size.w / 2)), Math.max(0, srcW - size.w));
+    const y = Math.min(Math.max(0, Math.round(cy * srcH - size.h / 2)), Math.max(0, srcH - size.h));
+    return { size, crop: { x, y, w: size.w, h: size.h } };
+  }
+  return { size };
 }
 
 /** Filter graph pieces: the kept parts joined, then the picture shaped, then captions. */
@@ -294,7 +312,10 @@ function graph(parts: Kept[], hasVideo: boolean, g: Geometry, out: { w: number; 
       pieces.push(`[0:v]trim=${t},setpts=PTS-STARTPTS[v${i}]`);
       joined.push(`[v${i}]`);
     }
-    pieces.push(`[0:a]atrim=${t},asetpts=PTS-STARTPTS[a${i}]`);
+    const len = Math.max(0, p.end - p.start);
+    const fadeIn = i > 0 && len > 0.03 ? ",afade=t=in:st=0:d=0.012" : "";
+    const fadeOut = i < parts.length - 1 && len > 0.03 ? `,afade=t=out:st=${Math.max(0, len - 0.012).toFixed(3)}:d=0.012` : "";
+    pieces.push(`[0:a]atrim=${t},asetpts=PTS-STARTPTS${fadeIn}${fadeOut}[a${i}]`);
     joined.push(`[a${i}]`);
     if (mix) pieces.push(`[${mix.index}:a]atrim=${t},asetpts=PTS-STARTPTS[d${i}]`);
   });
@@ -385,7 +406,8 @@ export async function renderCaptions(
   progress(0, "kesimler aranıyor");
   // What the dub says is not cut out, as in the app.
   const keep = dub ? dub.clips.map((c) => ({ start: c.start, end: c.start + c.seconds })) : [];
-  const cuts = o.jumpCut ? await planCuts(t, o.jumpCut, keep) : [];
+  const hasManualCuts = t.words.some((w) => w.cut === true || w.cutGap === true);
+  const cuts = o.jumpCut ? await planCuts(t, o.jumpCut, keep) : hasManualCuts ? await planCuts(t, { on: false }, keep) : [];
   const parts = keptParts(span, cuts);
   if (!parts.length) throw new Error("Kesimlerden sonra videoda bir şey kalmıyor.");
   const length = keptLength(parts);

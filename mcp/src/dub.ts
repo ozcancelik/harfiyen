@@ -3,7 +3,7 @@
 // which live in a worker and a React hook and cannot be imported here. Keep the numbers and the rules in step with
 // them: the same text should be read the same way in both.
 
-import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Word } from "../../src/engine";
@@ -334,4 +334,10 @@ export function loadDub(id: string): DubMeta | null {
   } catch {
     return null;
   }
+}
+
+export function removeDub(id: string) {
+  rmSync(dubWavPath(id), { force: true });
+  rmSync(dubMetaPath(id), { force: true });
+  rmSync(join(dubDir, `${safe(id)}.speech.wav`), { force: true });
 }

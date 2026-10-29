@@ -35,7 +35,9 @@ claude mcp add harfiyen -- node --import tsx /yol/harfiyen/mcp/src/server.ts
 | `import_subtitles` | SRT / VTT'yi transkript olarak açar |
 | `import_project`, `export_project`, `set_source` | Web uygulamasının `.harfiyen` projesini açar ve yazar; medya dosyası yeniden bağlanır |
 | `set_range` | Transkriptte kesit (bölüm) seçer ya da kaldırır (saniye ya da kelime sırasıyla); yeniden yazıya döküm yapmadan yalnızca o kesiti dışa aktarır, seslendirir ve videoya yazar |
+| `cut_words` | Metinden kurgu (kelime bazlı video kesme): seçilen kelime/saniye aralıklarını, dolgu seslerini (`fillers`) ve uzun duraksamaları (`silences`) keser (`mode: "cut"`), geri yükler (`mode: "restore"` / `"reset"`) ya da videonun farklı yerlerinden birden fazla önemli bölümü seçip geri kalanını keser (`mode: "keep_only"`). Kesimler `render_captions` ile tek geçişte birleştirilir |
 | `list_transcripts`, `get_transcript`, `export_transcript` | Okuma; satırlar, düz metin, SRT, VTT, kelime zamanlı JSON |
+| `rename_transcript`, `delete_transcript` | Transkripti yeniden adlandırma; transkripti, düzenleme geçmişini ve varsa seslendirmesini diskten silme |
 | `edit_words`, `find_replace`, `find_text` | Düzeltme ve arama; değişmeyen kelimelerin zamanı korunur. `find_text` eşleşmelerin yerini ve zamanını listeler |
 | `retime_words`, `shift_timing` | Bir satırın ya da kelimenin zamanı; bütün altyazıyı kaydırma |
 | `edit_translation` | Çeviriyi düzeltme (`find_replace` de `language: translation` ile çeviride çalışır) |
@@ -47,7 +49,7 @@ claude mcp add harfiyen -- node --import tsx /yol/harfiyen/mcp/src/server.ts
 | `translate` | TR ↔ EN, cümle cümle |
 | `tell_speakers`, `rename_speaker` | Kim ne zaman konuşuyor; adlar SRT, VTT ve videoda görünür |
 | `plan_jump_cut` | Kesilecek sessizlikleri ve dolgu seslerini listeler |
-| `render_captions` | Altyazıyı videoya yazar: stil, yazı tipi, sesle vurgula, jump cut, 9:16 / 4:5 / 1:1 / 16:9 kadraj ve seslendirme karıştırma |
+| `render_captions` | Altyazıyı videoya yazar: stil, yazı tipi, sesle vurgula, jump cut, 9:16 / 4:5 / 1:1 / 16:9 kadraj (`crop_position: orta/sol/sag/ust/alt`), seslendirme karıştırma ve seçilen görünümü `.harfiyen` projesine kaydetme (`save_to_project`) |
 | `job_status`, `cancel_job` | `background: true` ile başlatılan işlerin durumu ve çalışan işi (Chrome / ffmpeg süreciyle birlikte) durdurma |
 
 Uzun işler tek tek, sırayla çalışır (modeller belleği paylaşır) ve ilerleme bildirimi gönderir.

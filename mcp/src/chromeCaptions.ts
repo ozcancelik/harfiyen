@@ -13,7 +13,7 @@ import { wordsIn } from "../../src/lib/trim";
 import type { Encode } from "../../src/worker/render.worker";
 import type { BurnJob } from "../render-host/host";
 import { probe, type MediaInfo } from "./audio";
-import { dubFor, type RenderOptions } from "./captions";
+import { CROP_CENTER, dubFor, type RenderOptions } from "./captions";
 import { renderInChrome, type ImageInput, type Inputs } from "./chrome";
 import { dubWavPath } from "./dub";
 import { planCuts, waveformOf, type Progress } from "./pipeline";
@@ -72,7 +72,8 @@ function frameFor(o: RenderOptions, info: MediaInfo, noPicture: boolean): Pick<E
   if (o.cropBox && o.fit === "fill") {
     crop = { aspect: o.aspect ?? "free", ...o.cropBox, fit: "fill", backdrop: "blur" };
   } else if (o.aspect) {
-    crop = { ...cropFor(o.aspect, info.width, info.height), fit: o.fit, backdrop: o.backdrop ?? "blur" };
+    const center = o.cropPosition ? CROP_CENTER[o.cropPosition] : { cx: 0.5, cy: 0.5 };
+    crop = { ...cropFor(o.aspect, info.width, info.height, center.cx, center.cy), fit: o.fit, backdrop: o.backdrop ?? "blur" };
   }
   if (!crop) return { size: o.width ? scaled(own) : null, crop: null, fit: null, out: scaled(own) };
   const frame = framing(crop, info.width, info.height);
@@ -112,7 +113,8 @@ export async function renderChrome(
   progress(0, "kesimler aranıyor");
   // What the dub says is not cut out, as in the app.
   const keep = dub ? dub.clips.map((x) => ({ start: x.start, end: x.start + x.seconds })) : [];
-  const cuts = o.jumpCut ? await planCuts(t, o.jumpCut, keep) : [];
+  const hasManualCuts = t.words.some((w) => w.cut === true || w.cutGap === true);
+  const cuts = o.jumpCut ? await planCuts(t, o.jumpCut, keep) : hasManualCuts ? await planCuts(t, { on: false }, keep) : [];
   const parts = keptParts(span, cuts);
   if (!parts.length) throw new Error("Kesimlerden sonra videoda bir şey kalmıyor.");
 

@@ -38,7 +38,16 @@ const num = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : n
 function readWords(list: unknown): Word[] {
   return (Array.isArray(list) ? (list as Record<string, unknown>[]) : [])
     .filter((w) => typeof w?.text === "string" && num(w.start) !== null && num(w.end) !== null)
-    .map((w): Word => ({ text: w.text as string, start: w.start as number, end: w.end as number, ...(w.cue === true && { cue: true }) }));
+    .map(
+      (w): Word => ({
+        text: w.text as string,
+        start: w.start as number,
+        end: w.end as number,
+        ...(w.cue === true && { cue: true }),
+        ...(typeof w.cut === "boolean" && { cut: w.cut }),
+        ...(typeof w.cutGap === "boolean" && { cutGap: w.cutGap }),
+      }),
+    );
 }
 
 function readTrim(x: unknown): { start: number; end: number } | undefined {
@@ -131,7 +140,14 @@ export function writeProject(t: Transcript, wave?: Waveform): string {
     ...(app.crop !== undefined && { crop: app.crop }),
     ...(t.range && { trim: t.range }),
     ...(app.jumpCut !== undefined && { jumpCut: app.jumpCut }),
-    words: t.words.map((w) => ({ text: w.text, start: r3(w.start), end: r3(w.end), ...(w.cue && { cue: true }) })),
+    words: t.words.map((w) => ({
+      text: w.text,
+      start: r3(w.start),
+      end: r3(w.end),
+      ...(w.cue && { cue: true }),
+      ...(typeof w.cut === "boolean" && { cut: w.cut }),
+      ...(typeof w.cutGap === "boolean" && { cutGap: w.cutGap }),
+    })),
     ...(t.translation && {
       translation: {
         lang: t.translation.lang,

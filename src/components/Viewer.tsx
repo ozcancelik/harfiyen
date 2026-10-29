@@ -280,6 +280,9 @@ export function Viewer({
     if (!compositor || !c || !st || (!el && !live)) return;
     let raf = 0;
     let last = "";
+    let anchorMedia = -1;
+    let anchorWall = 0;
+    let smoothT = 0;
     /** A video frame has been drawn: from then on a seek keeps it up until the new one is decoded. */
     let drawn = false;
     const cropKey = `${placement ? JSON.stringify(placement) : ""}|${shownLogo ? `${shownLogo.corner}${shownLogo.size}${shownLogo.opacity}` : ""}`;
@@ -289,7 +292,24 @@ export function Viewer({
       const fit = Math.min(1, (st.clientWidth * dpr) / frame.w, (st.clientHeight * dpr) / frame.h);
       const w = Math.max(2, Math.round(frame.w * fit));
       const h = Math.max(2, Math.round(frame.h * fit));
-      const t = el && !live ? el.currentTime : liveRef.current;
+      let t = liveRef.current;
+      if (el && !live) {
+        const rawT = el.currentTime;
+        const now = performance.now();
+        if (el.paused || el.ended || el.seeking || el.readyState < 2 || Math.abs(rawT - smoothT) > 0.08) {
+          anchorMedia = rawT;
+          anchorWall = now;
+          smoothT = rawT;
+        } else {
+          if (rawT !== anchorMedia) {
+            anchorMedia = rawT;
+            anchorWall = now;
+          }
+          const extrapolated = anchorMedia + ((now - anchorWall) / 1000) * el.playbackRate;
+          smoothT = Math.max(smoothT, Math.min(anchorMedia + 0.04, extrapolated));
+        }
+        t = smoothT;
+      }
       // No picture (or a video used for its sound) and no photo: the aura. It follows the media clock (so
       // the export matches); while recording it drifts with the wall clock instead.
       let aura: AuraFrame | null = null;

@@ -20,7 +20,7 @@ export interface VideoOutput {
 }
 
 /** Aura videos for audio files and recordings, at 1080p unless another size is chosen. */
-export const AUDIO_VIDEO = { width: 1920, height: 1080, fps: 30 };
+export const AUDIO_VIDEO = { width: 1920, height: 1080, fps: 60 };
 
 const LEVELS: Record<Exclude<OutputQuality, "source">, number> = { low: 0.25, medium: 0.5, high: 0.75, "very-high": 1 };
 /** Bits needed for the same picture, relative to H.264. */

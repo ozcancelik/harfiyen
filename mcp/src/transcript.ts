@@ -1,6 +1,6 @@
 // Transcripts the tools work on, kept as JSON files so they outlive the server process.
 
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -64,6 +64,13 @@ export function list(): Transcript[] {
   } catch {
     return [];
   }
+}
+
+export function remove(id: string): Transcript {
+  const t = load(id);
+  rmSync(path(t.id), { force: true });
+  rmSync(undoPath(t.id), { force: true });
+  return t;
 }
 
 // ---- Undo ----

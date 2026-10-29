@@ -155,7 +155,7 @@ export async function planCuts(t: Transcript, jc: Partial<JumpCut>, keep: { star
   const loudness = await loudnessOf(t.source, span.end);
   // A setting left out arrives as undefined, which would overwrite its default.
   const given = Object.fromEntries(Object.entries(jc).filter(([, v]) => v !== undefined));
-  return findCuts(t.words, span, { ...DEFAULT_JUMP_CUT, ...given, on: true }, loudness, keep);
+  return findCuts(t.words, span, { ...DEFAULT_JUMP_CUT, on: true, ...given }, loudness, keep);
 }
 
 /** Peak amplitude per this many seconds, as the app's waveform (src/worker/protocol.ts). */

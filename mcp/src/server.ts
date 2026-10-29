@@ -7,7 +7,19 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import type { Word } from "../../src/engine";
 import { alignText } from "../../src/lib/align";
-import { buildCues, SUBTITLE_RULES } from "../../src/lib/cues";
+import { buildCues, importedCues, SUBTITLE_RULES } from "../../src/lib/cues";
+import {
+  DEFAULT_JUMP_CUT,
+  findCuts,
+  isFiller,
+  keptLength,
+  keptParts,
+  restoreAllCuts,
+  toggleGapCut,
+  toggleWordsCut,
+  wordGap,
+  wordsThrough,
+} from "../../src/lib/cuts";
 import { replaceRange } from "../../src/lib/edit";
 import { toJson, toSrt, toText, toVtt } from "../../src/lib/exporters";
 import { findMatches, replaceMatches } from "../../src/lib/find";
@@ -22,8 +34,8 @@ import { renderCaptions, DEFAULT_CAPTIONS, type RenderOptions } from "./captions
 import { findChrome, missingChrome } from "./chrome";
 import { renderChrome, type ChromeStyle } from "./chromeCaptions";
 import * as jobs from "./jobs";
-import { fontIdOf, lookOf } from "./appstyle";
-import { dubBySentence, dubKey, dubLines, dubWavPath, loadDub, placeLines, saveDub, speak, timeToDub, wordsFromText, writeDubWav, type DubMeta } from "./dub";
+import { fontIdOf, lookOf, saveLookToApp } from "./appstyle";
+import { dubBySentence, dubKey, dubLines, dubWavPath, loadDub, placeLines, removeDub, saveDub, speak, timeToDub, wordsFromText, writeDubWav, type DubMeta } from "./dub";
 import { BUNDLED } from "./fonts";
 import { installed, modelDir, SPEECH_MODELS } from "./models";
 import { fitVoice, speaker, VOICE_INFO, type Voice, type VoiceLang, type VoiceModel } from "./voices";
@@ -78,9 +90,12 @@ const stale = (t: Transcript) => !!t.translation && t.translation.source !== sou
 const summary = (t: Transcript) => {
   const inSpan = t.range ? wordsIn(t.words, t.range).length : t.words.length;
   const words = t.range && inSpan !== t.words.length ? `${inSpan}/${t.words.length} kelime` : `${t.words.length} kelime`;
+  const cutCount = t.words.filter((w) => w.cut).length;
+  const gapCount = t.words.filter((w) => w.cutGap).length;
+  const cuts = cutCount || gapCount ? ` (${[cutCount && `${cutCount} kelime kesik`, gapCount && `${gapCount} boşluk kısaltıldı`].filter(Boolean).join(", ")})` : "";
   const span = t.range ? `  ${clock(t.range.start)}–${clock(t.range.end)}/${clock(t.duration)}` : `  ${clock(t.duration)}`;
   return (
-    `${t.id}  ${t.name}  ${words}${span}  ${t.lang}${t.model ? `  ${t.model}` : ""}` +
+    `${t.id}  ${t.name}  ${words}${cuts}${span}  ${t.lang}${t.model ? `  ${t.model}` : ""}` +
     `${t.translation ? (stale(t) ? "  çeviri eski" : "  çeviri var") : ""}${t.speakers ? `  ${t.speakers.names.length} konuşmacı` : ""}`
   );
 };
@@ -90,19 +105,37 @@ function render(t: Transcript, format: "lines" | "text" | "srt" | "vtt" | "json"
   const range = full ? null : (t.range ?? null);
   const names = t.speakers?.names;
   if (format === "lines") {
-    // Word indices stay the whole transcript's so edit_words and retime_words can address them.
-    return buildCues(all, SUBTITLE_RULES)
+    // Word indices stay the whole transcript's so edit_words, cut_words and retime_words can address them.
+    const spanStart = range?.start ?? 0;
+    const cues = importedCues(all) ?? buildCues(all, SUBTITLE_RULES);
+    return cues
       .filter((c) => !range || (c.end > range.start && c.start < range.end))
-      .map((c) => `[${c.first}..${c.first + c.words.length - 1}] ${clock(c.start)} ${c.words.map((w) => w.text).join(" ")}`)
+      .map((c) => {
+        const textParts = c.words.map((w, i) => {
+          const idx = c.first + i;
+          const g = wordGap(all, idx, spanStart);
+          const gapNote =
+            g >= 0.6 || w.cutGap !== undefined
+              ? `${w.cutGap ? `[~⏸ ${g.toFixed(1)}s~] ` : `[⏸ ${g.toFixed(1)}s] `}`
+              : "";
+          const wordText = w.cut ? `~${w.text}~` : w.text;
+          return `${gapNote}${wordText}`;
+        });
+        return `[${c.first}..${c.first + c.words.length - 1}] ${clock(c.start)} ${textParts.join(" ")}`;
+      })
       .join("\n");
   }
-  const words = wordsIn(all, range, true);
-  const duration = range ? range.end - range.start : t.duration;
+  const span = range ?? { start: 0, end: t.duration || (all.at(-1)?.end ?? 0) };
+  const hasCuts = !full && t.words.some((w) => w.cut === true || w.cutGap === true);
+  const cuts = hasCuts ? findCuts(t.words, span, { ...DEFAULT_JUMP_CUT, on: false }, new Float32Array(0)) : [];
+  const words = cuts.length ? wordsThrough(all, span, cuts) : wordsIn(all, range, true);
+  const duration = cuts.length ? keptLength(keptParts(span, cuts)) : range ? range.end - range.start : t.duration;
+  const cues = () => importedCues(words) ?? buildCues(words, SUBTITLE_RULES);
   switch (format) {
     case "srt":
-      return toSrt(buildCues(words, SUBTITLE_RULES), names);
+      return toSrt(cues(), names);
     case "vtt":
-      return toVtt(buildCues(words, SUBTITLE_RULES), names);
+      return toVtt(cues(), names);
     case "text":
       return toText(words, names);
     case "json":
@@ -348,6 +381,43 @@ server.registerTool(
 );
 
 server.registerTool(
+  "rename_transcript",
+  {
+    title: "Transkripti yeniden adlandır",
+    description: "Transkriptin adını değiştirir (.harfiyen projesinde ve list_transcripts çıktısında görünür).",
+    inputSchema: { id: z.string(), name: z.string().min(1) },
+  },
+  async (a) => {
+    try {
+      const t = store.load(a.id);
+      t.name = a.name.trim();
+      store.save(t);
+      return text(summary(t));
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "delete_transcript",
+  {
+    title: "Transkripti sil",
+    description: "Kayıtlı bir transkripti, düzenleme geçmişini ve varsa seslendirme (dub) ses dosyasını diskten siler. Orijinal medya dosyasına dokunulmaz.",
+    inputSchema: { id: z.string() },
+  },
+  async (a) => {
+    try {
+      const t = store.remove(a.id);
+      removeDub(t.id);
+      return text(`Silindi: ${t.id}  ${t.name}`);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
   "get_transcript",
   {
     title: "Transkripti oku",
@@ -403,7 +473,7 @@ server.registerTool(
   {
     title: "Kelimeleri düzelt",
     description:
-      "get_transcript lines çıktısındaki [ilk..son] aralığındaki kelimeleri verilen metinle değiştirir; değişmeyen kelimelerin zamanı korunur. Boş metin siler.",
+      "get_transcript lines çıktısındaki [ilk..son] aralığındaki kelimeleri verilen metinle değiştirir; değişmeyen kelimelerin zamanı korunur. Yazım hatası düzeltmek içindir; videodan kelime, cümle veya bölüm kesmek için cut_words kullanılmalı.",
     inputSchema: { id: z.string(), first: z.number().int().min(0), count: z.number().int().min(1), text: z.string() },
   },
   async (a) => {
@@ -414,6 +484,125 @@ server.registerTool(
       t.words = replaceRange(t.words, a.first, a.count, a.text);
       store.save(t);
       return text(`Güncellendi. ${summary(t)}`);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+const CutRangeSchema = z.object({
+  first: z.number().int().min(0).optional().describe("Başlangıç kelimesinin sırası (0'dan)"),
+  last: z.number().int().min(0).optional().describe("Bitiş kelimesinin sırası (dahil)"),
+  count: z.number().int().min(1).optional().describe("first'ten itibaren kaç kelime (last yerine)"),
+  start: z.number().min(0).optional().describe("Başlangıç zamanı, saniye (kelime sırası yerine)"),
+  end: z.number().min(0).optional().describe("Bitiş zamanı, saniye"),
+});
+
+server.registerTool(
+  "cut_words",
+  {
+    title: "Metinden kurgu (kelime, bölüm, boşluk ve çoklu klip kes)",
+    description:
+      "Transkript üzerinden videoyu keser; kelimeler silinmez, üstü çizili (~kelime~) olarak işaretlenir ve render_captions / export_transcript çalışırken bu kısımlar tek seferde (single-pass) atlanıp kalanlar birleştirilir.\n" +
+      "- mode='keep_only': Videonun farklı yerlerinden birden fazla önemli bölümü seçip tek bir özet klip (ör. 30 sn Reels/Shorts) yapmak için kullanılır. Verilen ranges dışındaki tüm kelimeleri keser ve dış aralığı (range) ilk tutulan kelimeden son tutulan kelimeye daraltır; böylece render_captions tüm parçaları tek bir render geçişinde birleştirir.\n" +
+      "- mode='cut': Verilen ranges içindeki kelimeleri/cümleleri videodan çıkarır.\n" +
+      "- mode='restore': Verilen ranges içindeki kesilmiş kelimeleri geri getirir.\n" +
+      "- mode='reset': El ile yapılan tüm kelime ve boşluk kesimlerini sıfırlar.\n" +
+      "Ayrıca fillers=true ile tüm dolgu sesleri ('ııı', 'eee', 'hmm'), silences=true ile uzun sessizlikler, gap_before ile belirli kelimelerin önündeki sessizlikler tek çağrıda kısaltılabilir. undo ile geri alınır.",
+    inputSchema: {
+      id: z.string(),
+      mode: z.enum(["cut", "keep_only", "restore", "reset"]).default("cut"),
+      ranges: z.array(CutRangeSchema).optional().describe("Kesilecek veya tutulacak kelime/zaman aralıkları"),
+      fillers: z.boolean().optional().describe("true: tüm dolgu seslerini ('ııı', 'eee', 'hmm') keser; false: geri alır"),
+      silences: z.boolean().optional().describe("true: min_gap'ten uzun tüm sessizlikleri kısaltır; false: geri alır"),
+      min_gap: z.number().min(0.2).default(0.6).describe("silences=true iken kısaltılacak en kısa sessizlik, saniye"),
+      gap_before: z.array(z.number().int().min(0)).optional().describe("Önündeki sessizliği kısaltılacak (mode=restore ise geri alınacak) kelimelerin sıraları"),
+      pad: z.number().min(0).default(0.15).describe("keep_only modunda ilk kelimeden önce ve son kelimeden sonra bırakılacak pay, saniye"),
+    },
+  },
+  async (a) => {
+    try {
+      const t = store.load(a.id);
+      if (!t.words.length) throw new Error("Transkriptte kelime yok.");
+      const maxTime = t.duration || (t.words.at(-1)?.end ?? 0);
+      const jc = { ...DEFAULT_JUMP_CUT, on: false, gap: a.min_gap, pad: a.pad };
+
+      if (a.mode === "reset") {
+        store.checkpoint(t, "cut_words (sıfırla)");
+        t.words = restoreAllCuts(t.words);
+        store.save(t);
+        return text(`Tüm el kesimleri sıfırlandı.\n${summary(t)}`);
+      }
+
+      const picked = new Set<number>();
+      for (const r of a.ranges ?? []) {
+        if (r.first !== undefined) {
+          const last = r.last ?? (r.count !== undefined ? r.first + r.count - 1 : r.first);
+          if (r.first >= t.words.length || last >= t.words.length || last < r.first) {
+            throw new Error(`Kelime aralığı ${r.first}..${last} geçersiz (0..${t.words.length - 1}).`);
+          }
+          for (let i = r.first; i <= last; i++) picked.add(i);
+        } else if (r.start !== undefined && r.end !== undefined && r.end > r.start) {
+          t.words.forEach((w, i) => {
+            if (w.end > r.start! && w.start < r.end!) picked.add(i);
+          });
+        } else {
+          throw new Error("Her aralıkta (first, last/count) ya da (start, end) verilmeli.");
+        }
+      }
+
+      store.checkpoint(t, `cut_words (${a.mode})`);
+      let next = t.words.slice();
+
+      if (a.mode === "keep_only") {
+        if (!picked.size) throw new Error("keep_only için en az bir kelime aralığı (ranges) seçilmeli.");
+        const sorted = [...picked].sort((x, y) => x - y);
+        const firstIdx = sorted[0];
+        const lastIdx = sorted[sorted.length - 1];
+        const spanStart = Math.max(0, next[firstIdx].start - a.pad);
+        const spanEnd = Math.min(maxTime, next[lastIdx].end + a.pad);
+        t.range = spanStart <= 0.01 && spanEnd >= maxTime - 0.01 ? undefined : { start: Math.round(spanStart * 1000) / 1000, end: Math.round(spanEnd * 1000) / 1000 };
+        next = next.map((w, i) => {
+          const { cut: _, ...rest } = w;
+          return picked.has(i) ? rest : { ...rest, cut: true };
+        });
+      } else if (picked.size) {
+        next = toggleWordsCut(next, [...picked], jc, a.mode === "cut");
+      }
+
+      if (a.fillers !== undefined) {
+        const fillerIndices: number[] = [];
+        next.forEach((w, i) => {
+          if (isFiller(w.text)) fillerIndices.push(i);
+        });
+        next = toggleWordsCut(next, fillerIndices, jc, a.fillers);
+      }
+
+      if (a.silences !== undefined) {
+        const spanStart = t.range?.start ?? 0;
+        const gapIndices: number[] = [];
+        next.forEach((_, i) => {
+          if (wordGap(next, i, spanStart) >= a.min_gap - 1e-6) gapIndices.push(i);
+        });
+        for (const idx of gapIndices) next = toggleGapCut(next, idx, jc, a.silences);
+      }
+
+      if (a.gap_before?.length) {
+        const cutGap = a.mode !== "restore";
+        for (const idx of a.gap_before) next = toggleGapCut(next, idx, jc, cutGap);
+      }
+
+      t.words = next;
+      store.save(t);
+
+      const span = t.range ?? { start: 0, end: maxTime };
+      const cuts = findCuts(t.words, span, jc, new Float32Array(0));
+      const parts = keptParts(span, cuts);
+      const outLen = keptLength(parts);
+      const partsText = parts.map((p) => `${clock(p.start)}–${clock(p.end)} (${(p.end - p.start).toFixed(1)}s)`).join(", ");
+      return text(
+        `${summary(t)}\nTutulan parçalar (${parts.length} parça, çıktı süresi ${outLen.toFixed(1)} sn): ${partsText}`,
+      );
     } catch (e) {
       return fail(e);
     }
@@ -630,7 +819,7 @@ server.registerTool(
   {
     title: "Altyazılı video",
     description:
-      "Altyazıyı videoya yazar. Transkript web uygulamasının .harfiyen projesinden geldiyse (import_project) projenin altyazı stili, yazı tipi, renkleri, boyutu, kadrajı (kırpma kutusu ya da sığdırma, bulanık zemin) ve boşluk kesme ayarı varsayılan olarak kullanılır; verilen parametreler bunun üstüne yazar, use_project=false projeyi yok sayar. Stiller: klasik (koyu kutu), sade (gölgeli), karaoke (söylenen kelime renkle dolar), akis (kelimeler söylendikçe yerinde belirir), odak (bulanıktan netleşir), vurgu (söylenen kelime renkli işaretleyici), pop (ortada 3 iri zıplayan kelime), netles (ortada tek iri kelime bulanıktan netleşir), tek-kelime (ortada tek iri kelime). Video varsayılan olarak uygulamanın kendi çizim koduyla, kurulu Chrome'da yazılır: cam stili, aura, kinetik tipografi, bulanık görüntü, arka plan fotoğrafı ve logo (preset=cam, text_background=glass, kinetic, picture=aura/blur, aura, aura_style, photo_file, logo_file) yalnızca böyle çizilir. Chrome yoksa ffmpeg kullanılır ve cevapta not düşülür (yalnızca Chrome'da olanlar istendiyse hata verilir). Chrome yolunda size uygulamanın boyudur (kısa kenarın payı), bold yoktur.",
+      "Altyazıyı videoya yazar. cut_words ile kesilen kelimeler, kısaltılan boşluklar veya mode='keep_only' ile seçilen çoklu önemli bölümler tek bir render geçişinde (single-pass, ses crossfade ile) birleştirilip yazılır. Transkript web uygulamasının .harfiyen projesinden geldiyse (import_project) projenin altyazı stili, yazı tipi, renkleri, boyutu, kadrajı (kırpma kutusu ya da sığdırma, bulanık zemin) ve boşluk kesme ayarı varsayılan olarak kullanılır; verilen parametreler bunun üstüne yazar, use_project=false projeyi yok sayar. Stiller: klasik (koyu kutu), sade (gölgeli), karaoke (söylenen kelime renkle dolar), akis (kelimeler söylendikçe yerinde belirir), odak (bulanıktan netleşir), vurgu (söylenen kelime renkli işaretleyici), pop (ortada 3 iri zıplayan kelime), netles (ortada tek iri kelime bulanıktan netleşir), tek-kelime (ortada tek iri kelime). Video varsayılan olarak uygulamanın kendi çizim koduyla, kurulu Chrome'da yazılır: cam stili, aura, kinetik tipografi, bulanık görüntü, arka plan fotoğrafı ve logo (preset=cam, text_background=glass, kinetic, picture=aura/blur, aura, aura_style, photo_file, logo_file) yalnızca böyle çizilir. Chrome yoksa ffmpeg kullanılır ve cevapta not düşülür (yalnızca Chrome'da olanlar istendiyse hata verilir). Chrome yolunda size uygulamanın boyudur (kısa kenarın payı), bold yoktur.",
     inputSchema: {
       id: z.string(),
       output: z.string().describe("Yazılacak .mp4 dosyasının yolu"),
@@ -669,11 +858,13 @@ server.registerTool(
       color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
       accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Vurgu rengi (karaoke dolgusu, vurgu kutusu)"),
       speaker_names: z.boolean().optional().describe("Konuşan değişince adı yazılsın (varsayılan: proje ne diyorsa, yoksa açık)"),
-      aspect: z.enum(["9:16", "4:5", "1:1", "16:9"]).optional().describe("Kadraj; verilirse projenin kırpma kutusu yok sayılır ve ortadan kırpılır"),
+      aspect: z.enum(["9:16", "4:5", "1:1", "16:9"]).optional().describe("Kadraj; verilirse projenin kırpma kutusu yok sayılır ve crop_position konumundan kırpılır"),
+      crop_position: z.enum(["orta", "sol", "sag", "ust", "alt"]).optional().describe("fill modunda kırpma kutusunun konumu: orta (varsayılan), sol, sag, ust, alt"),
       fit: z.enum(["fill", "fit"]).optional().describe("fill: kareyi kapla, taşanı kes; fit: tamamı görünsün, boşluk siyah ya da bulanık"),
       backdrop: z.enum(["black", "blur"]).optional().describe("fit'te görüntünün çevresi: siyah ya da görüntünün kendisi bulanık"),
       jump_cut: z.boolean().optional().describe("Sessizlikleri ve dolgu seslerini videodan çıkar; verilmezse projenin ayarı"),
       ...JumpCutOptional,
+      save_to_project: z.boolean().default(true).describe("Seçilen stil, kadraj ve boşluk kesme ayarlarını transkripte kaydet (export_project ile .harfiyen dosyasına da geçer)"),
       codec: z.enum(["h264", "hevc"]).default("h264"),
       crf: z.number().int().min(10).max(35).default(20).describe("Kalite; düşük daha iyi"),
       width: z.number().int().min(240).max(3840).optional().describe("Çıkış genişliği, piksel"),
@@ -693,8 +884,8 @@ server.registerTool(
           : fromProject.size !== undefined
             ? { size: fromProject.size, sizeBasis: fromProject.sizeBasis }
             : { size: DEFAULT_CAPTIONS.size };
-      // A ratio asked for here replaces the project's crop; a fit asked for drops the crop box (a box is a fill).
-      const ownCrop = a.aspect === undefined;
+      // A ratio or position asked for here replaces the project's crop; a fit asked for drops the crop box (a box is a fill).
+      const ownCrop = a.aspect === undefined && a.crop_position === undefined;
       const fit = a.fit ?? (ownCrop ? look.fit : undefined) ?? "fill";
       const jumpCut =
         a.jump_cut === false
@@ -721,7 +912,8 @@ server.registerTool(
         emphasis: a.emphasis ?? look.emphasis ?? false,
         speakerNames: a.speaker_names ?? look.speakerNames,
         fontFile: a.font_file ? abs(a.font_file) : undefined,
-        aspect: a.aspect ?? (ownCrop ? look.aspect : undefined),
+        aspect: a.aspect ?? look.aspect,
+        cropPosition: a.crop_position,
         fit,
         backdrop: a.backdrop ?? (ownCrop ? look.backdrop : undefined),
         cropBox: ownCrop && fit === "fill" ? look.cropBox : undefined,
@@ -772,16 +964,58 @@ server.registerTool(
       if (!a.photo_file && a.photo_blur !== undefined) {
         early.push("photo_blur için photo_file da verilmeli.");
       }
+      const family = a.font_file ? undefined : (a.font ?? undefined);
+      const fontId = family ? fontIdOf(family) : undefined;
+      const preset = a.preset ?? (a.style ? STYLE_PRESET[a.style] : look.settings ? undefined : "sade");
+      const projectKinetic = !preset && !hidden && (look.settings as { kinetic?: { on?: boolean } } | undefined)?.kinetic?.on === true;
+      // A palette or backdrop alone changes the project's kinetic stage; it does not turn one on.
+      const kineticPatch = { ...(a.kinetic_palette && { palette: a.kinetic_palette }), ...(a.kinetic_backdrop && { backdrop: a.kinetic_backdrop }) };
+      const kinetic = a.kinetic ? { style: a.kinetic, ...kineticPatch } : projectKinetic && Object.keys(kineticPatch).length ? kineticPatch : undefined;
+      const stylePatch = {
+        ...(fontId && { font: fontId }),
+        ...(a.size !== undefined && { size: a.size }),
+        ...(a.position && { position: { alt: "bottom", orta: "middle", ust: "top" }[a.position] }),
+        ...(a.color && { textColor: a.color }),
+        ...(a.accent && { accentColor: a.accent }),
+        ...(a.uppercase !== undefined && { uppercase: a.uppercase }),
+        ...(a.text_background && { background: a.text_background }),
+        ...(a.speaker_names !== undefined && { speakerNames: a.speaker_names }),
+        ...(a.aura && { aura: a.aura }),
+        ...(a.aura_style && { auraStyle: a.aura_style }),
+      };
+
+      if (a.save_to_project) {
+        const mediaInfo = t.source ? await probe(t.source).catch(() => null) : null;
+        t.app = saveLookToApp(a.use_project ? t.app : undefined, {
+          preset,
+          patch: stylePatch,
+          kinetic,
+          picture: a.picture,
+          hidden,
+          emphasis: a.emphasis,
+          speakerNames: a.speaker_names,
+          logo: a.logo_file
+            ? {
+                corner: a.logo_corner ?? look.logo?.corner ?? "tr",
+                size: a.logo_size ?? look.logo?.size ?? 0.14,
+                opacity: a.logo_opacity ?? look.logo?.opacity ?? 1,
+              }
+            : undefined,
+          photo: a.photo_file ? { blur: a.photo_blur ?? look.photoBlur } : undefined,
+          aspect: opts.aspect,
+          fit: a.fit,
+          backdrop: a.backdrop,
+          cropPosition: a.crop_position,
+          mediaSize: mediaInfo && mediaInfo.hasVideo ? { width: mediaInfo.width, height: mediaInfo.height } : undefined,
+          jumpCut: a.jump_cut,
+          jumpCutOpts: jumpCut,
+        });
+        store.save(t);
+      }
+
       let r: { output: string; seconds: number; cuts: number; size: string; dubbed: boolean; notes: string[] };
       let drawnBy = "";
       if (chrome) {
-        const family = a.font_file ? undefined : (a.font ?? undefined);
-        const fontId = family ? fontIdOf(family) : undefined;
-        const preset = a.preset ?? (a.style ? STYLE_PRESET[a.style] : look.settings ? undefined : "sade");
-        const projectKinetic = !preset && !hidden && (look.settings as { kinetic?: { on?: boolean } } | undefined)?.kinetic?.on === true;
-        // A palette or backdrop alone changes the project's kinetic stage; it does not turn one on.
-        const kineticPatch = { ...(a.kinetic_palette && { palette: a.kinetic_palette }), ...(a.kinetic_backdrop && { backdrop: a.kinetic_backdrop }) };
-        const kinetic = a.kinetic ? { style: a.kinetic, ...kineticPatch } : projectKinetic && Object.keys(kineticPatch).length ? kineticPatch : undefined;
         if (!kinetic && Object.keys(kineticPatch).length) {
           early.push("kinetic_palette ve kinetic_backdrop yalnızca kinetik tipografi açıkken (kinetic parametresi ya da projede) kullanılır.");
         }
@@ -789,18 +1023,7 @@ server.registerTool(
           settings: a.use_project ? look.settings : undefined,
           // No style asked for and no project: sade, the look this tool has always started from.
           preset,
-          patch: {
-            ...(fontId && { font: fontId }),
-            ...(a.size !== undefined && { size: a.size }),
-            ...(a.position && { position: { alt: "bottom", orta: "middle", ust: "top" }[a.position] }),
-            ...(a.color && { textColor: a.color }),
-            ...(a.accent && { accentColor: a.accent }),
-            ...(a.uppercase !== undefined && { uppercase: a.uppercase }),
-            ...(a.text_background && { background: a.text_background }),
-            ...(a.speaker_names !== undefined && { speakerNames: a.speaker_names }),
-            ...(a.aura && { aura: a.aura }),
-            ...(a.aura_style && { auraStyle: a.aura_style }),
-          },
+          patch: stylePatch,
           kinetic,
           picture: a.picture,
           fontFile: a.font_file ? abs(a.font_file) : undefined,

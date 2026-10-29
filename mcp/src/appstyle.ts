@@ -4,8 +4,9 @@
 // never dropped silently.
 
 import type { Corner, LogoSettings } from "../../src/captions/style";
-import type { JumpCut } from "../../src/lib/cuts";
-import type { Aspect, CaptionOptions, CaptionStyle } from "./captions";
+import { cropFor } from "../../src/lib/crop";
+import { DEFAULT_JUMP_CUT, type JumpCut } from "../../src/lib/cuts";
+import { CROP_CENTER, type Aspect, type CaptionOptions, type CaptionStyle, type CropPosition } from "./captions";
 
 export interface Look {
   style?: CaptionStyle;
@@ -148,4 +149,95 @@ export function lookOf(app: Record<string, unknown> | undefined): Look {
     look.used.jumpCut = "boşluk kesme";
   }
   return look;
+}
+
+const STYLE_KEYS = ["font", "size", "position", "textColor", "accentColor", "uppercase", "background"] as const;
+
+export interface AppLookUpdate {
+  preset?: string;
+  patch?: Record<string, unknown>;
+  kinetic?: { style?: string; palette?: string; backdrop?: "stage" | "aura" };
+  picture?: "video" | "blur" | "aura";
+  hidden?: boolean;
+  emphasis?: boolean;
+  speakerNames?: boolean;
+  logo?: { corner: Corner; size: number; opacity: number };
+  photo?: { blur?: boolean };
+  aspect?: Aspect;
+  fit?: "fill" | "fit";
+  backdrop?: "black" | "blur";
+  cropPosition?: CropPosition;
+  mediaSize?: { width: number; height: number };
+  jumpCut?: boolean;
+  jumpCutOpts?: Partial<JumpCut>;
+}
+
+/** Updates `app` (`t.app`) with the visual, framing and jump-cut settings chosen in `render_captions`, for `.harfiyen` export. */
+export function saveLookToApp(prev: Record<string, unknown> | undefined, u: AppLookUpdate): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...prev };
+  const s: Record<string, unknown> = { ...obj(prev?.settings) };
+  if (u.preset) s.preset = u.preset;
+  else if (typeof s.preset !== "string") s.preset = "sade";
+
+  const overrides = new Set<string>(Array.isArray(s.overrides) ? (s.overrides as string[]).filter((x) => typeof x === "string") : []);
+  if (u.patch) {
+    for (const [k, v] of Object.entries(u.patch)) {
+      if (v !== undefined) {
+        s[k] = v;
+        if ((STYLE_KEYS as readonly string[]).includes(k)) overrides.add(k);
+      }
+    }
+  }
+  if (overrides.size) s.overrides = [...overrides];
+  if (u.hidden !== undefined) s.hidden = u.hidden;
+  if (u.emphasis !== undefined) s.voiceEmphasis = u.emphasis;
+  if (u.speakerNames !== undefined) s.speakerNames = u.speakerNames;
+  if (u.picture !== undefined) s.picture = u.picture === "aura" ? "hidden" : u.picture;
+  if (u.photo) {
+    s.photo = true;
+    if (u.photo.blur !== undefined) s.photoBlur = u.photo.blur;
+  }
+  if (u.logo) {
+    s.logo = { on: true, corner: u.logo.corner, size: u.logo.size, opacity: u.logo.opacity };
+  }
+  if (u.kinetic) {
+    const k = obj(s.kinetic);
+    s.kinetic = {
+      style: "dugum",
+      palette: "gece",
+      font: (typeof u.patch?.font === "string" ? u.patch.font : typeof k?.font === "string" ? k.font : "montserrat"),
+      backdrop: "stage",
+      ...k,
+      ...u.kinetic,
+      on: true,
+    };
+    s.hidden = false;
+  } else if (u.preset || u.hidden) {
+    const k = obj(s.kinetic);
+    if (k?.on === true) s.kinetic = { ...k, on: false };
+  }
+  next.settings = s;
+
+  const prevCrop = obj(prev?.crop);
+  const aspect = u.aspect ?? (typeof prevCrop?.aspect === "string" && ASPECTS.has(prevCrop.aspect) ? (prevCrop.aspect as Aspect) : undefined);
+  if (aspect && (u.aspect !== undefined || u.cropPosition !== undefined || u.fit !== undefined || u.backdrop !== undefined)) {
+    const w = u.mediaSize?.width || 1920;
+    const h = u.mediaSize?.height || 1080;
+    const center = u.cropPosition ? CROP_CENTER[u.cropPosition] : { cx: 0.5, cy: 0.5 };
+    const fit = u.fit ?? (prevCrop?.fit === "fit" ? "fit" : "fill");
+    const backdrop = u.backdrop ?? (prevCrop?.backdrop === "black" ? "black" : "blur");
+    next.crop = { ...cropFor(aspect, w, h, center.cx, center.cy), fit, backdrop };
+  }
+
+  if (u.jumpCut !== undefined || u.jumpCutOpts) {
+    const prevJc = obj(prev?.jumpCut);
+    const on = u.jumpCut ?? (prevJc?.on === true || !!u.jumpCutOpts);
+    next.jumpCut = {
+      on,
+      gap: u.jumpCutOpts?.gap ?? (num(prevJc?.gap) ? prevJc.gap : DEFAULT_JUMP_CUT.gap),
+      pad: u.jumpCutOpts?.pad ?? (num(prevJc?.pad) ? prevJc.pad : DEFAULT_JUMP_CUT.pad),
+      fillers: u.jumpCutOpts?.fillers ?? (typeof prevJc?.fillers === "boolean" ? prevJc.fillers : DEFAULT_JUMP_CUT.fillers),
+    };
+  }
+  return next;
 }

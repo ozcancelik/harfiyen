@@ -225,6 +225,17 @@ export const HISTORY_ROWS = 24;
 export const HISTORY_STEP = 0.2;
 
 /**
+ * Step index and 0..1 phase within HISTORY_STEP for time t. Computed once in
+ * JS and passed in the uniform block so CPU (f64) and WGSL (f32) never disagree
+ * on a boundary frame (e.g. t = 0.6s where f64 gives 2.9999999999999996 and f32 gives 3.0).
+ */
+function historyStep(t: number): { n: number; phase: number } {
+  const u = Math.round((t / HISTORY_STEP) * 1e6) / 1e6;
+  const n = Math.floor(u);
+  return { n, phase: u - n };
+}
+
+/**
  * The levels of Ufuk's rows at time t, 4 floats a row (low, mid, high,
  * punch). Row 0 is t itself; row k ≥ 1 is the k-th step boundary back. The
  * rows scroll back between boundaries, so each keeps its moment as it moves
@@ -232,7 +243,7 @@ export const HISTORY_STEP = 0.2;
  */
 export function historyAt(levelsAtTime: (time: number) => AuraLevels, t: number): Float32Array {
   const out = new Float32Array(HISTORY_ROWS * 4);
-  const n = Math.floor(t / HISTORY_STEP);
+  const { n } = historyStep(t);
   for (let k = 0; k < HISTORY_ROWS; k++) {
     const l = levelsAtTime(k === 0 ? t : (n - k + 1) * HISTORY_STEP);
     out.set([l.low, l.mid, l.high, l.punch ?? 0], k * 4);
@@ -279,12 +290,13 @@ export function auraUniforms(a: AuraFrame, width: number, height: number): Float
   const [c1, c2, c3] = a.palette.map(hexToRgb);
   const styleIdx = STYLE_INDEX[a.style ?? "aura"] ?? 0;
   const levels = [a.levels.low, a.levels.mid, a.levels.high, a.levels.punch ?? 0];
+  const { n: stepN, phase: stepPhase } = historyStep(a.time);
   const out = new Float32Array(AURA_UNIFORM_BYTES / 4);
   out.set([
     width, height, a.time, styleIdx,
     ...levels,
-    ...c1, 0,
-    ...c2, 0,
+    ...c1, stepN,
+    ...c2, stepPhase,
     ...c3, 0,
   ]);
   if (a.history) out.set(a.history, 20);
@@ -448,27 +460,37 @@ fn draw_spektrum(uv: vec2f, aspect: f32, t: f32, low: f32, mid: f32, high: f32, 
   }
   col += a.c1.rgb * exp(-max(r - R, 0.0) * 9.0) * (0.18 + 0.35 * energy + 0.4 * punch);
 
-  let n = floor(t / STEP);
-  let phase = fract(t / STEP);
+  let n = a.c1.w;
+  let phase = a.c2.w;
   let scale = a.res.y / 1080.0;
+  // The shape is in world x (finer with distance); the swell stays in the middle of the screen.
+  let env = exp(-sx * sx * 0.9);
+  // Depth of the flat ground under this pixel, so the grid lines run straight and unbroken.
+  let gz = clamp(CAM_H / max(uv.y - HORIZON_Y, 0.001), 1.0, 40.0);
+  let gx = sx * gz * 3.2;
+  let gd = abs(fract(gx + 0.5) - 0.5) * a.res.y / (gz * 3.2);
+  let gw = (0.5 + 1.0 / gz) * scale;
+  // Fades with distance, before the lines crowd into a moiré at the horizon.
+  let grid = exp(-gd * gd / (2.0 * gw * gw)) * 0.45 * exp(-gz * 0.12);
 
   // Far to near, each row hiding those behind it.
   for (var i = ROWS - 1; i >= 0; i--) {
     let pos = f32(i) + phase;
     let z = 1.0 + pos * Z_STEP;
-    let ts = select((n - f32(i) + 1.0) * STEP, t, i == 0);
-    let h = a.hist[i];
     let base = HORIZON_Y + CAM_H / z;
-    // The shape is in world x (finer with distance); the swell stays in the middle of the screen.
+    let reach = env * CAM_H * 1.6 / pow(z, 0.7);
+    // Skip rows whose highest possible crest and glow still lie below this pixel in the sky.
+    if (uv.y < base - 0.72 * reach - 0.06) { continue; }
+    let ts = (n - f32(i) + 1.0) * STEP;
+    let h = a.hist[i];
     // Heights shrink a little slower than true perspective, so far crests still read.
-    let env = exp(-sx * sx * 0.9);
-    let crest = base - row_height(sx * z * 1.6, ts, h) * env * CAM_H * 1.6 / pow(z, 0.7);
+    let crest = base - row_height(sx * z * 1.6, ts, h) * reach;
     let dy = uv.y - crest;
 
     let far = pos / f32(ROWS);
     let fog = 1.0 - exp(-(z - 1.0) * 0.25);
-    // The last row fades out before it drops off the back.
-    let vis = 1.0 - smoothstep(f32(ROWS) - 2.0, f32(ROWS), pos);
+    // The back row fades out before it leaves; the front one fades in smoothly as it is born.
+    let vis = (1.0 - smoothstep(f32(ROWS) - 2.0, f32(ROWS), pos)) * smoothstep(0.0, 1.0, pos);
     let tint = mix(mix(a.c2.rgb, a.c1.rgb, 0.3), a.c3.rgb, far);
     let bright = 0.5 + 1.1 * (h.x + h.y + h.z) / 3.0 + 0.6 * h.w;
 
@@ -477,13 +499,7 @@ fn draw_spektrum(uv: vec2f, aspect: f32, t: f32, low: f32, mid: f32, high: f32, 
       // and the grid's lines running through it to the vanishing point.
       let rim = exp(-dy * a.res.y / ((6.0 + 26.0 / z) * scale));
       var body = mix(deep, tint * 0.22 * bright, rim);
-      // Depth of the flat ground under this pixel, so the lines run straight and unbroken.
-      let gz = clamp(CAM_H / max(uv.y - HORIZON_Y, 0.001), 1.0, 40.0);
-      let gx = sx * gz * 3.2;
-      let gd = abs(fract(gx + 0.5) - 0.5) * a.res.y / (gz * 3.2);
-      let gw = (0.5 + 1.0 / gz) * scale;
-      // Fades with distance, before the lines crowd into a moiré at the horizon.
-      body += tint * exp(-gd * gd / (2.0 * gw * gw)) * 0.45 * (0.6 + 0.4 * bright) * exp(-gz * 0.12);
+      body += tint * grid * (0.6 + 0.4 * bright);
       col = mix(col, mix(body, haze * 0.6, fog), 0.92 * vis);
     } else {
       // A soft glow rising above the crest.
@@ -625,8 +641,8 @@ fn draw_akis(uv: vec2f, aspect: f32, t: f32, low: f32, mid: f32, high: f32, punc
   // A faint glow behind the peaks.
   var col = ground + a.c1.rgb * 0.05 * exp(-dot(vec2f(sx, uv.y - 0.55), vec2f(sx, uv.y - 0.55)) * 6.0) * (0.7 + 0.6 * energy);
 
-  let n = floor(t / STEP);
-  let phase = fract(t / STEP);
+  let n = a.c1.w;
+  let phase = a.c2.w;
   // Only the lines that can reach this pixel: a line well above it only hides it (the pixel is
   // under its body), one further below than its tallest peak here never gets up to it. Away from
   // the middle the peaks are low, so there only a line or two is looked at.
@@ -654,7 +670,7 @@ fn draw_akis(uv: vec2f, aspect: f32, t: f32, low: f32, mid: f32, high: f32, punc
     let px = abs(dy) * a.res.y / sqrt(1.0 + slope * slope);
     let age = pos / f32(ROWS);
     // The back line fades out before it leaves; the front one fades in as it is born.
-    let vis = (1.0 - smoothstep(f32(ROWS) - 2.0, f32(ROWS), pos)) * smoothstep(0.0, 0.6, pos + 0.4);
+    let vis = (1.0 - smoothstep(f32(ROWS) - 2.0, f32(ROWS), pos)) * smoothstep(0.0, 1.0, pos);
     if (dy > 0.0) {
       col = mix(col, ground, vis);
     }
