@@ -85,11 +85,8 @@ function settingsOf(job: BurnJob, userFont: UserFont | null): CaptionSettings {
   return s;
 }
 
-/** An image from the local server as an ImageBitmap, scaled the way storedImage.ts does (SVGs included). */
-async function rasterise(path: string, raster: number, label: string): Promise<ImageBitmap> {
-  const response = await fetch(path);
-  if (!response.ok) throw new Error(`${label} okunamadı (${response.status}).`);
-  const blob = await response.blob();
+/** An image Blob as an ImageBitmap, scaled the way storedImage.ts does (SVGs included). */
+async function rasteriseBlob(blob: Blob, raster: number, label: string): Promise<ImageBitmap> {
   const url = URL.createObjectURL(blob);
   try {
     const img = new Image();
@@ -109,6 +106,52 @@ async function rasterise(path: string, raster: number, label: string): Promise<I
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/** An image from the local server as an ImageBitmap, scaled the way storedImage.ts does (SVGs included). */
+async function rasterise(path: string, raster: number, label: string): Promise<ImageBitmap> {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(`${label} okunamadı (${response.status}).`);
+  return rasteriseBlob(await response.blob(), raster, label);
+}
+
+/** A background photo or looping muted video from /__photo. */
+async function loadPhoto(path: string, raster: number): Promise<{ bitmap: ImageBitmap; video: Blob | null }> {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(`Arka plan medyası okunamadı (${response.status}).`);
+  const blob = await response.blob();
+  if (blob.type.startsWith("video/")) {
+    const url = URL.createObjectURL(blob);
+    const v = document.createElement("video");
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = "auto";
+    v.src = url;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        v.onloadeddata = () => resolve();
+        v.onerror = () => reject(new Error("unreadable"));
+        v.load();
+      });
+      const w = v.videoWidth;
+      const h = v.videoHeight;
+      if (!w || !h) throw new Error("unreadable");
+      const scale = Math.min(1, raster / Math.max(w, h));
+      const bitmap = await createImageBitmap(v, {
+        resizeWidth: Math.max(1, Math.round(w * scale)),
+        resizeHeight: Math.max(1, Math.round(h * scale)),
+        resizeQuality: "high",
+      });
+      return { bitmap, video: blob };
+    } catch {
+      throw new Error("Arka plan videosu açılamadı.");
+    } finally {
+      v.removeAttribute("src");
+      v.load();
+      URL.revokeObjectURL(url);
+    }
+  }
+  return { bitmap: await rasteriseBlob(blob, raster, "Fotoğraf"), video: null };
 }
 
 /** The dub's PCM (16-bit mono, 48 kHz, from the file's start) as the worker's DubMix: one clip that covers all of it. */
@@ -155,7 +198,9 @@ window.burn = async (job) => {
 
   const userFont = job.font ? await addFontFile(new File([await (await fetch("/__font")).arrayBuffer()], job.font.name)) : null;
   const logo: LogoLayer | null = job.logo ? { ...job.logo, image: await rasterise("/__logo", 1024, "Logo") } : null;
-  const photo: ImageBitmap | null = job.photo ? await rasterise("/__photo", 3840, "Fotoğraf") : null;
+  const bgMedia = job.photo ? await loadPhoto("/__photo", 3840) : null;
+  const photo: ImageBitmap | null = bgMedia?.bitmap ?? null;
+  const photoVideo: Blob | null = bgMedia?.video ?? null;
   const msg: ToRender = {
     type: "burn",
     jobId: 1,
@@ -170,6 +215,7 @@ window.burn = async (job) => {
     dub: job.dub ? await dubMix(job.dub.original) : null,
     logo,
     photo,
+    photoVideo,
     encode: job.encode,
     // null: the worker writes to the browser's private disk and hands the file back.
     handle: null,

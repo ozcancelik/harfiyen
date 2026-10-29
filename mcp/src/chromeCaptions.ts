@@ -47,11 +47,31 @@ const IMAGE_TYPES: Record<string, string> = {
   ".jpeg": "image/jpeg",
 };
 
+const VIDEO_TYPES: Record<string, string> = {
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  ".m4v": "video/x-m4v",
+  ".mkv": "video/x-matroska",
+};
+
 function readImage(file: string, maxBytes: number, tooBig: string, badExt: string): ImageInput {
   const type = IMAGE_TYPES[extname(file).toLowerCase()];
   if (!type) throw new Error(badExt);
   const bytes = readFileSync(file);
   if (bytes.length > maxBytes) throw new Error(tooBig);
+  return { bytes, type };
+}
+
+function readPhotoOrVideo(file: string): ImageInput {
+  const ext = extname(file).toLowerCase();
+  const imgType = IMAGE_TYPES[ext];
+  const vidType = VIDEO_TYPES[ext];
+  const type = imgType ?? vidType;
+  if (!type) throw new Error("Arka plan medyası fotoğraf (JPEG, PNG, WebP, SVG) ya da video (MP4, WebM, MOV) olmalı.");
+  const bytes = readFileSync(file);
+  if (vidType && bytes.length > 250 * 1024 * 1024) throw new Error("Video çok büyük (250 MB üstü).");
+  if (imgType && bytes.length > 25 * 1024 * 1024) throw new Error("Fotoğraf çok büyük (25 MB üstü).");
   return { bytes, type };
 }
 
@@ -156,12 +176,7 @@ export async function renderChrome(
     );
   }
   if (c.photo) {
-    inputs.photo = readImage(
-      c.photo.file,
-      25 * 1024 * 1024,
-      "Fotoğraf çok büyük (25 MB üstü).",
-      "Fotoğraf JPEG, PNG, WebP ya da SVG olmalı.",
-    );
+    inputs.photo = readPhotoOrVideo(c.photo.file);
   }
   if (wantBands || loud) {
     const wave = await waveformOf(t.source, span.end, (s) => progress(s * 0.15, "ses okunuyor"));
