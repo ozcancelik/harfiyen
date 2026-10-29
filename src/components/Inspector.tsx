@@ -109,6 +109,8 @@ export function Inspector({
   onJumpCut,
   jumpCutUnavailable,
   jumpCutSummary,
+  hasManualCuts,
+  onRestoreManualCuts,
   speakers,
   captionLang,
   tab: controlledTab,
@@ -185,6 +187,8 @@ export function Inspector({
   /** Why the quiet cannot be cut now; null when it can. */
   jumpCutUnavailable: string | null;
   jumpCutSummary: JumpCutSummary | null;
+  hasManualCuts?: boolean;
+  onRestoreManualCuts?: () => void;
   /** Telling who speaks when. */
   speakers: ComponentProps<typeof SpeakersSection>;
   /** The language of the captions shown. */
@@ -343,6 +347,8 @@ export function Inspector({
               onChange={onJumpCut}
               unavailable={jumpCutUnavailable}
               summary={jumpCutSummary}
+              hasManualCuts={hasManualCuts}
+              onRestoreManual={onRestoreManualCuts}
             />
             <SpeakersSection {...speakers} />
             <Section title="Doğruluk">

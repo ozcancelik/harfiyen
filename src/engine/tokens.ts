@@ -23,6 +23,10 @@ export interface Word {
   cue?: true;
   /** Who says it, by number, when the speakers were told apart (src/lib/speakers.ts sets it from the turns). */
   speaker?: number;
+  /** Cut from the video in the transcript (`true`), or kept even when automatic filler cutting is on (`false`). */
+  cut?: boolean;
+  /** Shorten the silence before this word (`true`), or keep it even when automatic silence cutting is on (`false`). */
+  cutGap?: boolean;
 }
 
 /**

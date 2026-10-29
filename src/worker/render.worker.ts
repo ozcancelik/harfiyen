@@ -159,20 +159,27 @@ function mixDub(sample: AudioSample, dub: DubMix, t0: number): AudioSample {
   });
 }
 
-/** How long the sound fades out before a cut and in after it, seconds. */
-const CUT_FADE = 0.012;
+/** How long the sound crossfades across a cut, seconds. */
+const CUT_FADE = 0.015;
+
+interface CutClock {
+  frames: number;
+  /** Faded-out audio frames right after the previous cut's start, mixed into the next kept segment's head. */
+  tail?: Float32Array[];
+}
 
 /**
  * The kept parts of a sample, one after another from `clock.frames` (output
- * frames written so far), faded at the cuts. `t0` is where the sample's
+ * frames written so far), crossfaded at the cuts. `t0` is where the sample's
  * timestamps start in the file. The sample itself is not closed.
  */
-function cutAudio(sample: AudioSample, t0: number, kept: Kept[], span: { start: number; end: number }, clock: { frames: number }): AudioSample[] {
+function cutAudio(sample: AudioSample, t0: number, kept: Kept[], span: { start: number; end: number }, clock: CutClock): AudioSample[] {
   const rate = sample.sampleRate;
   const n = sample.numberOfFrames;
   const channels = sample.numberOfChannels;
   const from = sample.timestamp + t0;
   const to = from + n / rate;
+  const fadeFrames = Math.max(1, Math.round(CUT_FADE * rate));
   const out: AudioSample[] = [];
   for (const k of kept) {
     if (k.end <= from) continue;
@@ -185,16 +192,43 @@ function cutAudio(sample: AudioSample, t0: number, kept: Kept[], span: { start: 
     // Fades only where a cut is: the span's own ends are written as they are.
     const fadeIn = k.start > span.start + 1e-3;
     const fadeOut = k.end < span.end - 1e-3;
+    const tailLen = fadeOut ? Math.min(fadeFrames, Math.max(0, n - b)) : 0;
+    const nextTail: Float32Array[] | undefined = tailLen > 0 ? [] : undefined;
+
     for (let c = 0; c < channels; c++) {
       const plane = data.subarray(c * len, (c + 1) * len);
       sample.copyTo(plane, { planeIndex: c, format: "f32-planar", frameOffset: a, frameCount: len });
-      if (!fadeIn && !fadeOut) continue;
-      for (let i = 0; i < len; i++) {
-        const t = from + (a + i) / rate;
-        const g = Math.min(1, fadeIn ? (t - k.start) / CUT_FADE : 1, fadeOut ? (k.end - t) / CUT_FADE : 1);
-        if (g < 1) plane[i] *= Math.max(0, g);
+      if (fadeIn || fadeOut) {
+        for (let i = 0; i < len; i++) {
+          const t = from + (a + i) / rate;
+          const gIn = fadeIn ? Math.min(1, Math.max(0, (t - k.start) / CUT_FADE)) : 1;
+          // When we have post-cut tail frames to overlap into the next part, only micro-taper the last 3ms here.
+          const outWindow = tailLen > 0 ? 0.003 : CUT_FADE;
+          const gOut = fadeOut ? Math.min(1, Math.max(0, (k.end - t) / outWindow)) : 1;
+          const g = Math.min(gIn, gOut);
+          if (g < 1) plane[i] *= Math.sin(g * (Math.PI / 2));
+        }
+      }
+      // Mix in the overlapping tail from the previous cut for a true crossfade.
+      const prevTail = fadeIn && a === Math.max(0, Math.round((k.start - from) * rate)) ? clock.tail?.[c] : undefined;
+      if (prevTail && Math.abs(from + a / rate - k.start) < 2 / rate) {
+        const mixLen = Math.min(len, prevTail.length);
+        for (let i = 0; i < mixLen; i++) {
+          plane[i] = Math.max(-1, Math.min(1, plane[i] + prevTail[i]));
+        }
+      }
+      if (nextTail && tailLen > 0) {
+        const tPlane = new Float32Array(tailLen);
+        sample.copyTo(tPlane, { planeIndex: c, format: "f32-planar", frameOffset: b, frameCount: tailLen });
+        for (let i = 0; i < tailLen; i++) {
+          const g = 1 - (i + 0.5) / tailLen;
+          tPlane[i] *= Math.sin(g * (Math.PI / 2));
+        }
+        nextTail.push(tPlane);
       }
     }
+    if (fadeIn && Math.abs(from + a / rate - k.start) < 2 / rate) clock.tail = undefined;
+    if (nextTail) clock.tail = nextTail;
     out.push(
       new AudioSample({
         data,

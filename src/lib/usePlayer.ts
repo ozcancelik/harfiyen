@@ -120,8 +120,16 @@ export function usePlayer(
       // In a cut: on to its end (not while that seek is still running).
       if (!el.paused && !el.seeking && cutsRef.current.length) {
         const t = el.currentTime;
-        const cut = cutsRef.current.find((c) => t >= c.start && t < c.end - 0.02);
-        if (cut) el.currentTime = cut.end;
+        const cut = cutsRef.current.find((c) => t >= c.start - 0.01 && t < c.end - 0.02);
+        if (cut) {
+          const stopAt = r ? r.end : Number.isFinite(el.duration) && el.duration > 0 ? el.duration : Infinity;
+          if (cut.end >= stopAt - 0.02) {
+            el.pause();
+            el.currentTime = Math.min(cut.end, stopAt);
+          } else {
+            el.currentTime = cut.end;
+          }
+        }
       }
       if (!el.paused && Math.abs(el.currentTime - last) >= 0.04) {
         last = el.currentTime;
