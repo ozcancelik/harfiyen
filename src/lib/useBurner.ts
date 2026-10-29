@@ -121,6 +121,8 @@ export function useBurner() {
       logo: LogoLayer | null,
       /** The user's photo, when this project uses it in place of the aura. */
       photo: ImageBitmap | null,
+      /** The user's background video file when the background media is a video. */
+      photoVideo: Blob | null,
       name: string,
     ) => {
       // The dialog must open straight from the click, before anything else waits.
@@ -147,6 +149,7 @@ export function useBurner() {
         dub,
         logo: ownLogo,
         photo: ownPhoto,
+        photoVideo,
         encode,
         handle,
       };

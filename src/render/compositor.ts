@@ -20,10 +20,11 @@ import { logoRect, type LogoLayer } from "./logoLayer";
 // aura (aura.ts) or the user's photo, which covers the frame. A 2D-canvas
 // path covers browsers without WebGPU.
 
-/** The user's photo (lib/photo.ts) over the whole frame, cut to its shape. */
+/** The user's photo or background video (lib/photo.ts) over the whole frame, cut to its shape. */
 export interface PhotoFrame {
   kind: "photo";
   image: ImageBitmap;
+  video?: HTMLVideoElement | VideoFrame | null;
 }
 
 export type Picture = VideoFrame | HTMLVideoElement | AuraFrame | PhotoFrame | null;
@@ -128,16 +129,18 @@ const isPhoto = (p: Picture): p is PhotoFrame => !!p && "kind" in p && p.kind ==
 const pictureReady = (p: Picture): p is VideoFrame | HTMLVideoElement =>
   !!p && !isAura(p) && !isPhoto(p) && (!("readyState" in p) || (p.readyState >= 2 && p.videoWidth > 0));
 
-/** An image drawn over the whole of a W×H frame, its overflow cut off evenly on both sides. */
+/** An image or video frame drawn over the whole of a W×H frame, its overflow cut off evenly on both sides. */
 function drawCover(
   g: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-  image: ImageBitmap,
+  image: ImageBitmap | VideoFrame | HTMLVideoElement,
   W: number,
   H: number,
 ) {
-  const s = Math.max(W / image.width, H / image.height);
-  const w = image.width * s;
-  const h = image.height * s;
+  const iw = "videoWidth" in image ? image.videoWidth : "displayWidth" in image ? image.displayWidth : image.width;
+  const ih = "videoHeight" in image ? image.videoHeight : "displayHeight" in image ? image.displayHeight : image.height;
+  const s = Math.max(W / iw, H / ih);
+  const w = iw * s;
+  const h = ih * s;
   g.imageSmoothingQuality = "high";
   g.drawImage(image, (W - w) / 2, (H - h) / 2, w, h);
 }
@@ -167,6 +170,7 @@ class GpuCompositor implements Compositor {
    */
   private photo: { image: ImageBitmap; w: number; h: number; texture: GPUTexture; bind: GPUBindGroup } | null = null;
   private photoBuffer: GPUBuffer;
+  private photoPlaceBuffer: GPUBuffer;
   private auraPipeline: GPURenderPipeline;
   private auraBuffer: GPUBuffer;
   private auraBind: GPUBindGroup;
@@ -216,6 +220,7 @@ class GpuCompositor implements Compositor {
     // The photo's quad: the whole frame, solid.
     this.photoBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(this.photoBuffer, 0, new Float32Array([-1, -1, 1, 1, 1, 0, 0, 0]));
+    this.photoPlaceBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.placeBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.coverBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.setPlacement(null);
@@ -340,9 +345,42 @@ class GpuCompositor implements Compositor {
       pass.setBindGroup(0, this.auraBind);
       pass.draw(3);
     } else if (isPhoto(picture)) {
-      pass.setPipeline(this.overlayPipeline);
-      pass.setBindGroup(0, this.photoBind(picture.image));
-      pass.draw(6);
+      let external: GPUExternalTexture | null = null;
+      const vid = picture.video && pictureReady(picture.video) ? picture.video : null;
+      if (vid) {
+        try {
+          external = d.importExternalTexture({ source: vid });
+        } catch {
+          external = null;
+        }
+      }
+      if (external && vid) {
+        const vw = "videoWidth" in vid ? vid.videoWidth : vid.displayWidth;
+        const vh = "videoHeight" in vid ? vid.videoHeight : vid.displayHeight;
+        const ratio = this.canvas.width / this.canvas.height;
+        const vRatio = vw / vh;
+        const wider = vRatio > ratio;
+        const sw = wider ? ratio / vRatio : 1;
+        const sh = wider ? 1 : vRatio / ratio;
+        const sx = wider ? (1 - sw) / 2 : 0;
+        const sy = wider ? 0 : (1 - sh) / 2;
+        d.queue.writeBuffer(this.photoPlaceBuffer, 0, new Float32Array([sx, sy, sw, sh, 0, 0, 1, 1]));
+        const bind = d.createBindGroup({
+          layout: this.videoPipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: this.sampler },
+            { binding: 1, resource: external },
+            { binding: 4, resource: { buffer: this.photoPlaceBuffer } },
+          ],
+        });
+        pass.setPipeline(this.videoPipeline);
+        pass.setBindGroup(0, bind);
+        pass.draw(3);
+      } else {
+        pass.setPipeline(this.overlayPipeline);
+        pass.setBindGroup(0, this.photoBind(picture.image));
+        pass.draw(6);
+      }
       drawn = true;
     } else if (pictureReady(picture)) {
       // A media element can lose its frame (seeking, source change); draw
@@ -474,6 +512,7 @@ class GpuCompositor implements Compositor {
     this.logo?.texture.destroy();
     this.photo?.texture.destroy();
     this.photoBuffer.destroy();
+    this.photoPlaceBuffer.destroy();
     this.placeBuffer.destroy();
     this.coverBuffer.destroy();
     this.auraBuffer.destroy();
@@ -511,10 +550,12 @@ class CanvasCompositor implements Compositor {
     this.blur = on;
   }
 
-  /** The photo over the whole canvas, or the picture as placed. */
+  /** The photo or background video over the whole canvas, or the picture as placed. */
   private drawGround(picture: PhotoFrame | VideoFrame | HTMLVideoElement) {
-    if (isPhoto(picture)) drawCover(this.g, picture.image, this.canvas.width, this.canvas.height);
-    else this.drawPicture(picture);
+    if (isPhoto(picture)) {
+      const src = picture.video && pictureReady(picture.video) ? picture.video : picture.image;
+      drawCover(this.g, src, this.canvas.width, this.canvas.height);
+    } else this.drawPicture(picture);
   }
 
   /** The picture laid out on the canvas: its backdrop, then its placement. */
