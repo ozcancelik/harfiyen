@@ -96,8 +96,14 @@ import { wordsIn } from "./lib/trim";
 import {
   DEFAULT_JUMP_CUT,
   findCuts,
+  hasActiveCuts,
   keptLength,
   keptParts,
+  restoreAllCuts,
+  toggleAllFillers,
+  toggleAllGaps,
+  toggleGapCut,
+  toggleWordsCut,
   wordsOutside,
   wordsThrough,
   type JumpCut,
@@ -412,10 +418,14 @@ export function App() {
         : NO_CUTS,
     [dubbing, ownFileIsDub],
   );
-  /** The stretches the jump cut takes out, in file time; none while it is off. */
+  /** The stretches the jump cut or transcript edits take out, in file time; none while neither is active. */
+  const hasManualCuts = useMemo(
+    () => !!job?.words.some((w) => w.cut !== undefined || w.cutGap !== undefined),
+    [job?.words],
+  );
   const cuts = useMemo(
     () =>
-      jumpCut.on && !jumpCutUnavailable && job
+      !jumpCutUnavailable && job && hasActiveCuts(job.words, jumpCut)
         ? findCuts(job.words, span, jumpCut, job.loudness, dubSpans)
         : NO_CUTS,
     [jumpCut, jumpCutUnavailable, job?.words, job?.loudness, span, dubSpans],
@@ -920,7 +930,7 @@ export function App() {
   const editable = !!job && job.status !== "running" && shown.length > 0;
   const commitWords = useCallback(
     (next: Word[]) => {
-      if (!job) return;
+      if (!job || next === shown) return;
       history.current.push({ jobId: job.id, en: translated, words: shown });
       setCanUndo(true);
       if (translated) setTranslation(job.id, { ...translation, words: next });
@@ -941,6 +951,29 @@ export function App() {
   const onEdit = useCallback(
     (first: number, count: number, text: string) =>
       commitWords(replaceRange(shown, first, count, text)),
+    [shown, commitWords],
+  );
+  const canCutFromText = editable && !translated && !jumpCutUnavailable;
+  const onToggleWords = useCallback(
+    (indices: number[], force?: boolean) =>
+      commitWords(toggleWordsCut(shown, indices, jumpCut, force)),
+    [shown, jumpCut, commitWords],
+  );
+  const onToggleGap = useCallback(
+    (index: number, force?: boolean) =>
+      commitWords(toggleGapCut(shown, index, jumpCut, force)),
+    [shown, jumpCut, commitWords],
+  );
+  const onToggleAllFillers = useCallback(
+    () => commitWords(toggleAllFillers(shown, jumpCut)),
+    [shown, jumpCut, commitWords],
+  );
+  const onToggleAllGaps = useCallback(
+    () => commitWords(toggleAllGaps(shown, jumpCut, span.start)),
+    [shown, jumpCut, span.start, commitWords],
+  );
+  const onRestoreManualCuts = useCallback(
+    () => commitWords(restoreAllCuts(shown)),
     [shown, commitWords],
   );
   // Hand-edited times: a line or a word placed or moved in what is shown.
@@ -1426,7 +1459,7 @@ export function App() {
     [sourceInfo, trim, kept],
   );
   const jumpCutSummary =
-    jumpCut.on && !jumpCutUnavailable
+    (jumpCut.on || hasManualCuts) && !jumpCutUnavailable
       ? {
           count: cuts.length,
           before: span.end - span.start,
@@ -1953,6 +1986,13 @@ export function App() {
                 found={found}
                 speakerNames={speakers?.names}
                 onSpeaker={editable ? onSpeaker : undefined}
+                jumpCut={jumpCut}
+                spanStart={span.start}
+                onToggleWords={canCutFromText ? onToggleWords : undefined}
+                onToggleGap={canCutFromText ? onToggleGap : undefined}
+                onToggleAllFillers={canCutFromText ? onToggleAllFillers : undefined}
+                onToggleAllGaps={canCutFromText ? onToggleAllGaps : undefined}
+                cutSummary={jumpCutSummary}
               />
             ) : (
               <EmptyNote>
@@ -2177,6 +2217,8 @@ export function App() {
           onJumpCut={changeJumpCut}
           jumpCutUnavailable={jumpCutUnavailable}
           jumpCutSummary={jumpCutSummary}
+          hasManualCuts={hasManualCuts}
+          onRestoreManualCuts={canCutFromText ? onRestoreManualCuts : undefined}
           speakers={{
             speakers,
             state: speakerTool.state,

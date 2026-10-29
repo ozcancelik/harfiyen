@@ -25,19 +25,23 @@ export function JumpCutSection({
   onChange,
   unavailable,
   summary,
+  hasManualCuts,
+  onRestoreManual,
 }: {
   value: JumpCut;
   onChange: (j: JumpCut) => void;
   unavailable: string | null;
   summary: JumpCutSummary | null;
+  hasManualCuts?: boolean;
+  onRestoreManual?: () => void;
 }) {
   const set = (p: Partial<JumpCut>) => onChange({ ...value, ...p });
-  const off = !!unavailable || !value.on;
+  const off = !!unavailable;
   return (
-    <Section title="Boşlukları kes">
+    <Section title="Metinden kurgu ve boşluklar">
       <Row>
-        <RowLabel wide>Sessizlikleri at</RowLabel>
-        <Switch checked={value.on} disabled={!!unavailable} onChange={(e) => set({ on: e.target.checked })} />
+        <RowLabel wide>Sessizlikleri otomatik at</RowLabel>
+        <Switch checked={value.on} disabled={off} onChange={(e) => set({ on: e.target.checked })} />
       </Row>
       <Row>
         <RowLabel>En kısa</RowLabel>
@@ -67,22 +71,34 @@ export function JumpCutSection({
       </Row>
       <Row>
         <RowLabel wide>Dolgu sesleri (ııı, eee)</RowLabel>
-        <Switch checked={value.fillers} disabled={off} onChange={(e) => set({ fillers: e.target.checked })} />
+        <Switch checked={value.fillers} disabled={off || !value.on} onChange={(e) => set({ fillers: e.target.checked })} />
       </Row>
       {unavailable ? (
         <Hint>{unavailable}</Hint>
-      ) : value.on && summary ? (
+      ) : (value.on || hasManualCuts) && summary ? (
         <Hint>
           {summary.count
             ? `${summary.count} yer kesiliyor, video ${fmtDuration(summary.before - summary.after)} kısalıyor: ${clock(summary.before)} → ${clock(summary.after)}.`
             : "Bu ayarlarla kesilecek boşluk yok."}{" "}
           Oynatırken kesilen yerler atlanır, zaman çizelgesinde soluk görünür.
+          {hasManualCuts && onRestoreManual && (
+            <>
+              {" "}
+              <button
+                type="button"
+                onClick={onRestoreManual}
+                className="cursor-pointer border-0 bg-transparent p-0 font-medium text-cini underline underline-offset-2 hover:text-fg"
+              >
+                El ile yapılan kesimleri geri al
+              </button>
+            </>
+          )}
         </Hint>
       ) : (
         <Hint>
-          Kelimeler arasındaki uzun sessizlikleri videodan çıkarır, cümleler arka arkaya gelir. <b>Pay</b>, kelimelerin
-          kırpılmaması için konuşmanın iki yanında bırakılan sessizlik. Transkripte dokunulmaz; kapatınca video eski hâline
-          döner.
+          Transkriptte kelimeleri seçip <b>Delete</b> ile (veya <b>Kurgu</b> moduyla) videodan kesebilir, <b>⏸</b>{" "}
+          rozetlerine tıklayarak uzun sessizlikleri kısaltabilirsin. Silinen yerler üstü çizili kalır; tekrar tıklayınca
+          geri gelir.
         </Hint>
       )}
     </Section>

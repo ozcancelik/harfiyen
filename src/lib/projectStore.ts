@@ -307,7 +307,14 @@ export function projectToFile(p: Project): string {
     ...(p.crop && { crop: p.crop }),
     ...(p.trim && { trim: p.trim }),
     ...(p.jumpCut && { jumpCut: p.jumpCut }),
-    words: p.words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end), ...(w.cue && { cue: true }) })),
+    words: p.words.map((w) => ({
+      text: w.text,
+      start: r(w.start),
+      end: r(w.end),
+      ...(w.cue && { cue: true }),
+      ...(typeof w.cut === "boolean" && { cut: w.cut }),
+      ...(typeof w.cutGap === "boolean" && { cutGap: w.cutGap }),
+    })),
     ...(p.translation && {
       translation: {
         lang: p.translation.lang,
@@ -368,6 +375,8 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
         start: w.start as number,
         end: w.end as number,
         ...(w.cue === true && { cue: true }),
+        ...(typeof w.cut === "boolean" && { cut: w.cut }),
+        ...(typeof w.cutGap === "boolean" && { cutGap: w.cutGap }),
       }));
   const words = readWords(d.words);
   const t = d.translation as Record<string, unknown> | undefined;

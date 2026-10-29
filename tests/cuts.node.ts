@@ -12,8 +12,15 @@ import {
   isFiller,
   keptLength,
   keptParts,
+  restoreAllCuts,
+  snapToQuiet,
+  toggleAllFillers,
+  toggleAllGaps,
+  toggleGapCut,
+  toggleWordsCut,
   toFile,
   toOutput,
+  wordsOutside,
   wordsThrough,
 } from "../src/lib/cuts";
 
@@ -92,6 +99,45 @@ check("kelime yoksa kesim yok", findCuts([], span, jc, new Float32Array(0)).leng
 {
   const parts = keptParts({ start: 2, end: 6 }, []);
   check("kesimsiz: bölümün tamamı", show(parts) === "2.00-6.00" && near(toOutput(3, parts), 1));
+}
+{
+  // Metinden kurgu: global jumpCut kapalıyken kelime ve cümle silme, geri alma, sessizlik kısaltma ve dolgu silme.
+  const offJc = { ...DEFAULT_JUMP_CUT, on: false, gap: 0.6, pad: 0.15 };
+  const w1 = toggleWordsCut(words, [1], offJc);
+  check("kelime silme: dizi korunur, üstü çizilir", w1.length === 4 && w1[1].cut === true);
+  const cuts1 = findCuts(w1, span, offJc, new Float32Array(0));
+  check("kelime silme: yalnız silinen kelime kesilir", show(cuts1) === "2.30-3.00", show(cuts1));
+  const w1Back = toggleWordsCut(w1, [1], offJc);
+  check("silinen kelimeye tekrar tıklayınca geri gelir", w1Back[1].cut === undefined && findCuts(w1Back, span, offJc, new Float32Array(0)).length === 0);
+
+  // Ardışık silinen kelimeler tek kesimde birleşir.
+  const wMulti = toggleWordsCut(words, [0, 1], offJc);
+  const cutsMulti = findCuts(wMulti, span, offJc, new Float32Array(0));
+  check("ardışık silinen kelimeler birleşir", show(cutsMulti) === "1.00-3.00", show(cutsMulti));
+
+  // Tek tıkla sessizlik kısaltma (words[2] öncesi 3.0-5.0 arası 2.0 sn sessizlik).
+  const wGap = toggleGapCut(words, 2, offJc);
+  const cutsGap = findCuts(wGap, span, offJc, new Float32Array(0));
+  check("tek tıkla sessizlik kısaltma", show(cutsGap) === "3.15-4.85", show(cutsGap));
+
+  // Tüm dolguları tek tıkla silme ve geri alma.
+  const wFillers = toggleAllFillers(words, offJc);
+  const cutsFillers = findCuts(wFillers, span, offJc, new Float32Array(0));
+  check("tüm dolguları tek tıkla silme", wFillers[3].cut === true && show(cutsFillers) === "6.20-6.60", show(cutsFillers));
+  const wRestored = restoreAllCuts( toggleAllGaps(wFillers, offJc, 0) );
+  check("tüm el kesimlerini sıfırlama", !wRestored.some((w) => w.cut !== undefined || w.cutGap !== undefined));
+
+  // Kelime sınırını en yakın sessizliğe kaydırma (snapToQuiet).
+  const loud = new Float32Array(8 * BAND_RATE).fill(-4);
+  // 1.93 sn civarında (frame 96) sessizlik çukuru (-18 dB).
+  loud[96] = -18;
+  const snapped = snapToQuiet(loud, 2.0, 1.88, 2.04);
+  check("kelime sınırı en yakın sessizliğe kayar", near(snapped, (96 + 0.5) / BAND_RATE), String(snapped));
+
+  // Altyazı çıktısında silinen kelimeler düşer, kalanlar senkron kalır.
+  const keptWordList = wordsOutside(w1, cuts1);
+  const syncedWords = wordsThrough(w1, span, cuts1);
+  check("altyazıda silinen kelime görünmez ve zamanlar senkron kayar", keptWordList.length === 3 && near(syncedWords[1].start, 4.3), show(syncedWords));
 }
 
 if (failed) {
