@@ -359,8 +359,10 @@ export function App() {
   );
   const { photo: photoImage } = usePhoto();
   useEffect(() => burner.reset(), [photoImage, burner.reset]);
-  /** The photo, when there is one and this project uses it in place of the aura. */
+  /** The photo or video still, when there is one and this project uses it in place of the aura. */
   const photo = settings.photo ? (photoImage?.bitmap ?? null) : null;
+  const photoVideo = settings.photo && photoImage?.kind === "video" ? photoImage.video : null;
+  const photoVideoUrl = settings.photo && photoImage?.kind === "video" ? photoImage.url : null;
   const dubber = useDubber();
   const translator = useTranslator();
   const speakerTool = useSpeakers();
@@ -1523,6 +1525,7 @@ export function App() {
         : null,
       logo,
       photo,
+      photoVideo,
       `${exportName}${videoSuffix}`,
     );
   };
@@ -1768,7 +1771,7 @@ export function App() {
             videoName={`${exportName}${videoSuffix}`}
             captions={!settings.hidden}
             kinetic={!!settings.kinetic?.on}
-            photo={!!photo && !!shownPhoto(settings, true)}
+            photo={photo && shownPhoto(settings, true) ? (photoImage?.kind ?? "image") : null}
             meta={{
               file: title,
               model: modelInfo(job.model).spec,
@@ -2017,6 +2020,7 @@ export function App() {
             cropLocked={burner.state.status === "running"}
             logo={logo}
             photo={photo}
+            photoVideo={photoVideoUrl}
             size={outputSize}
             bands={job?.bands ?? EMPTY_BANDS}
             loudness={

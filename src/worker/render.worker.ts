@@ -40,6 +40,7 @@ import {
   Quality,
   QUALITY_HIGH,
   VideoSample,
+  VideoSampleSink,
 } from "mediabunny";
 import { historyAt, levelsAt, paletteById, usesHistory } from "../render/aura";
 import { addUserFont, loadCaptionFont, type UserFont } from "../captions/fonts";
@@ -78,6 +79,8 @@ export type ToRender =
       logo: LogoLayer | null;
       /** The user's photo, a copy of the player's (transferred); null when this project does not use it. */
       photo: ImageBitmap | null;
+      /** The user's background video file when the background media is a video; null otherwise. */
+      photoVideo: Blob | null;
       encode: Encode;
       /** The file the user picked to save into; null renders to the private disk (or memory). */
       handle: FileSystemFileHandle | null;
@@ -275,6 +278,7 @@ async function burn(
   dub: DubMix | null,
   logo: LogoLayer | null,
   photo: ImageBitmap | null,
+  photoVideo: Blob | null,
   encode: Encode,
   sink: Sink,
   handle: FileSystemFileHandle | null,
@@ -285,7 +289,8 @@ async function burn(
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
   // A video used for its sound is drawn as an audio file is.
-  if (!track || settings.picture === "hidden") return burnAudio(jobId, input, words, settings, bands, loudness, lang, speakers, dub, logo, photo, encode, sink, handle, started);
+  if (!track || settings.picture === "hidden")
+    return burnAudio(jobId, input, words, settings, bands, loudness, lang, speakers, dub, logo, photo, photoVideo, encode, sink, handle, started);
   if (!(await track.canDecode())) throw new Error(`Videonun kodlaması (${track.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
 
   // Rotation is baked into the frames (allowRotationMetadata: false below),
@@ -389,6 +394,68 @@ async function burn(
   await finish(jobId, sink, handle, started);
 }
 
+async function openBgVideo(blob: Blob) {
+  const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
+  const track = await input.getPrimaryVideoTrack();
+  if (!track || !(await track.canDecode())) {
+    input.dispose();
+    return null;
+  }
+  const sink = new VideoSampleSink(track);
+  let iter: AsyncGenerator<VideoSample, void, unknown> | null = null;
+  let current: { sample: VideoSample; time: number } | null = null;
+  let next: { sample: VideoSample; time: number } | null = null;
+  let offset = 0;
+  let cycleEnd = 0;
+
+  const normalize = async (s: VideoSample): Promise<VideoSample> => {
+    if (!s.rotation && !s.flip) return s;
+    const rotated = await s.transform({});
+    s.close();
+    return rotated;
+  };
+
+  const pull = async (): Promise<{ sample: VideoSample; time: number } | null> => {
+    iter ??= sink.samples();
+    let r = await iter.next();
+    if (r.done) {
+      if (cycleEnd <= offset) return null;
+      offset = cycleEnd;
+      iter = sink.samples();
+      r = await iter.next();
+      if (r.done) return null;
+    }
+    const sample = await normalize(r.value);
+    const t = offset + Math.max(0, sample.timestamp);
+    cycleEnd = Math.max(cycleEnd, t + Math.max(1 / 60, sample.duration));
+    return { sample, time: t };
+  };
+
+  return {
+    frameAt: async (time: number): Promise<VideoFrame | null> => {
+      if (!current) current = await pull();
+      if (!current) return null;
+      if (!next) next = await pull();
+      while (next && next.time <= time + 1e-4) {
+        current.sample.close();
+        current = next;
+        next = await pull();
+      }
+      return current.sample.toVideoFrame();
+    },
+    close: async () => {
+      current?.sample.close();
+      next?.sample.close();
+      current = null;
+      next = null;
+      const it = iter;
+      iter = null;
+      await it?.return();
+      input.dispose();
+    },
+  };
+}
+
 async function burnAudio(
   jobId: number,
   input: Input,
@@ -401,6 +468,7 @@ async function burnAudio(
   dub: DubMix | null,
   logo: LogoLayer | null,
   photo: ImageBitmap | null,
+  photoVideo: Blob | null,
   encode: Encode,
   sink: Sink,
   handle: FileSystemFileHandle | null,
@@ -431,6 +499,7 @@ async function burnAudio(
   const span = { start: t0, end: t1 };
   const kept = keptParts(span, encode.cuts ?? []);
   const duration = keptLength(kept);
+  const bgVideo = ground && photo && photoVideo ? await openBgVideo(photoVideo) : null;
 
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: sink.fastStart }), target: sink.target });
   const video = new CanvasSource(canvas, {
@@ -456,19 +525,24 @@ async function burnAudio(
       const time = frame / fps;
       const at = toFile(time, kept);
       const levels = levelsAt(bands, at);
-      compositor.render(
-        ground && photo
-          ? { kind: "photo", image: photo }
-          : {
-              kind: "aura",
-              time: at,
-              levels,
-              palette,
-              style: settings.auraStyle ?? "aura",
-              history: usesHistory(settings.auraStyle) ? historyAt((s) => levelsAt(bands, s), at) : undefined,
-            },
-        kinetic ? kinetic.frame(at, levels) : (captions?.frame(at) ?? null),
-      );
+      const bgFrame = bgVideo ? await bgVideo.frameAt(time) : null;
+      try {
+        compositor.render(
+          ground && photo
+            ? { kind: "photo", image: photo, video: bgFrame }
+            : {
+                kind: "aura",
+                time: at,
+                levels,
+                palette,
+                style: settings.auraStyle ?? "aura",
+                history: usesHistory(settings.auraStyle) ? historyAt((s) => levelsAt(bands, s), at) : undefined,
+              },
+          kinetic ? kinetic.frame(at, levels) : (captions?.frame(at) ?? null),
+        );
+      } finally {
+        bgFrame?.close();
+      }
       await video.add(time, 1 / fps);
     }
     const sec = (performance.now() - started) / 1000;
@@ -506,6 +580,7 @@ async function burnAudio(
     await output.finalize();
   } finally {
     running.delete(jobId);
+    await bgVideo?.close();
     compositor.destroy();
     input.dispose();
   }
@@ -541,6 +616,7 @@ self.onmessage = (ev: MessageEvent<ToRender>) => {
         m.dub,
         m.logo,
         m.photo,
+        m.photoVideo,
         m.encode,
         sink,
         m.handle,

@@ -54,19 +54,30 @@ const PICTURES: { value: "video" | "blur"; label: string; note: string; kinetic:
   },
 ];
 
-/** The photo as it is or blurred (a picture's "video" and "blur"). */
-const PHOTO_LOOKS: { blur: boolean; label: string; note: string; kinetic: string }[] = [
+/** The photo or background video as it is or blurred (a picture's "video" and "blur"). */
+const PHOTO_LOOKS: {
+  blur: boolean;
+  label: string;
+  note: string;
+  kinetic: string;
+  videoNote: string;
+  videoKinetic: string;
+}[] = [
   {
     blur: false,
     label: "Net",
     note: "Fotoğraf kareyi kaplar, taşan kısmı kesilir.",
     kinetic: "Fotoğraf kareyi kaplar, üstünde paletin zemininden ince bir perde.",
+    videoNote: "Video sessizce döngüde oynar ve kareyi kaplar, taşan kısmı kesilir.",
+    videoKinetic: "Video sessizce döngüde oynar; üstünde paletin zemininden ince bir perde.",
   },
   {
     blur: true,
     label: "Bulanık",
     note: "Fotoğraf bulanık ve koyu; yazı her fotoğrafta okunur.",
     kinetic: "Fotoğraf bulanık ve koyu; yazı her fotoğrafta okunur.",
+    videoNote: "Video bulanık, koyu ve sessiz döngüde; yazı her görüntüde okunur.",
+    videoKinetic: "Video bulanık, koyu ve sessiz döngüde; yazı her görüntüde okunur.",
   },
 ];
 
@@ -198,7 +209,7 @@ export function SceneStudio({
             </button>
           ))}
           <button type="button" className={CHOICE} aria-pressed={usesPhoto} onClick={setPhoto}>
-            Fotoğraf
+            Medya
           </button>
           {mode === "kinetic" && (
             <button type="button" className={CHOICE} aria-pressed={plain} onClick={setPlain}>
@@ -209,7 +220,7 @@ export function SceneStudio({
         <input
           ref={photoFile}
           type="file"
-          accept="image/jpeg,image/png,image/webp,image/svg+xml"
+          accept="image/jpeg,image/png,image/webp,image/svg+xml,video/mp4,video/webm,video/quicktime"
           hidden
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -225,7 +236,7 @@ export function SceneStudio({
               <>
                 <div className="flex min-w-0 items-center gap-2.5">
                   <img
-                    src={photo.url}
+                    src={photo.thumbUrl}
                     alt=""
                     className="h-9 w-12 flex-none rounded-ui-sm border border-line object-cover"
                   />
@@ -240,7 +251,7 @@ export function SceneStudio({
                     Kaldır
                   </LinkButton>
                 </div>
-                <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Fotoğrafın görünümü">
+                <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Medyanın görünümü">
                   {PHOTO_LOOKS.map((l) => (
                     <button
                       key={l.label}
@@ -257,6 +268,7 @@ export function SceneStudio({
                   {video && "Görüntü kullanılmaz, yalnız sesi. "}
                   {(() => {
                     const look = PHOTO_LOOKS.find((l) => l.blur === !!settings.photoBlur)!;
+                    if (photo.kind === "video") return mode === "kinetic" ? look.videoKinetic : look.videoNote;
                     return mode === "kinetic" ? look.kinetic : look.note;
                   })()}{" "}
                   Bu tarayıcıda saklanır, sonraki projelerde de hazırdır.
@@ -266,12 +278,12 @@ export function SceneStudio({
               <>
                 <div>
                   <LinkButton type="button" disabled={photoBusy} onClick={() => photoFile.current?.click()}>
-                    {photoBusy ? "Fotoğraf açılıyor…" : "Bilgisayarından fotoğraf ekle"}
+                    {photoBusy ? "Medya açılıyor…" : "Bilgisayarından fotoğraf ya da video ekle"}
                   </LinkButton>
                 </div>
                 <Hint>
-                  JPEG, PNG ya da WebP; bir podcast kapağı ya da konuşanın fotoğrafı. Kareyi kaplar; eklenene kadar
-                  aura görünür.
+                  Fotoğraf (JPEG, PNG, WebP) ya da video (MP4, WebM, MOV). Kareyi kaplar, video sessizce döngüde oynar;
+                  eklenene kadar aura görünür.
                 </Hint>
               </>
             )}

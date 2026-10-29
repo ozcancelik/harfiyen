@@ -85,8 +85,8 @@ export function ExportMenu({
   captions: boolean;
   /** The kinetic stage is drawn in place of the captions. */
   kinetic: boolean;
-  /** An audio project's ground is the user's photo, not the aura. */
-  photo: boolean;
+  /** An audio project's ground is the user's photo or video, not the aura. */
+  photo: "image" | "video" | null;
   meta: Record<string, unknown>;
   /** The speakers' names, when they were told apart. */
   speakers?: string[];
@@ -276,8 +276,8 @@ export function ExportMenu({
                     : kinetic
                       ? "Ses ve kinetik tipografi"
                       : captions
-                        ? `Ses, ${photo ? "fotoğraf" : "hareketli aura"} ve altyazı`
-                        : `Ses ve ${photo ? "fotoğraf" : "hareketli aura"}, altyazısız; varsa logoyla`}
+                        ? `Ses, ${photo === "video" ? "arka plan videosu" : photo ? "fotoğraf" : "hareketli aura"} ve altyazı`
+                        : `Ses ve ${photo === "video" ? "arka plan videosu" : photo ? "fotoğraf" : "hareketli aura"}, altyazısız; varsa logoyla`}
                   , MP4
                   {source && `, yaklaşık ${size(out)}`}.
                 </MenuNote>
