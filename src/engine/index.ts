@@ -79,7 +79,7 @@ export class Engine {
       new Decoder(ort, dec, cfg.contextSize),
       new Joiner(ort, join, 512),
       new SymbolTable(files.tokens),
-      lm ? new RnnLm(ort, lm, cfg.lm) : null,
+      lm && cfg.lm ? new RnnLm(ort, lm, cfg.lm) : null,
       files.lodr ? new LodrFst(files.lodr) : null,
       vad,
       provider,

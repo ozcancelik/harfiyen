@@ -28,7 +28,7 @@ export interface ModelConfig extends EncoderShape {
    * files: more accurate, no live text needed. Same weights and states.
    */
   final?: EncoderShape;
-  lm: {
+  lm?: {
     sosId: number;
     numLayers: number;
     hiddenSize: number;

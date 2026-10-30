@@ -125,19 +125,22 @@ async function createOnProvider<T>(pick: ProviderPick, create: () => Promise<T>)
 
 async function loadSeda(m: ModelInfo, pick: ProviderPick): Promise<SpeechEngine> {
   const config = await readConfig<ModelConfig>(m);
-  const [encoder, decoder, joiner, lm, lodr, tokens, final, vad, wasm] = await download(m, config.files);
+  const downloaded = await download(m, config.files);
+  const wasm = downloaded[downloaded.length - 1];
+  const byName = Object.fromEntries(m.files.map((name, i) => [name, downloaded[i]]));
   post({ type: "compiling" });
   setupRuntime(wasm, pick.provider, true);
+  const lodr = byName["lodr.bin"];
   const files = {
     config,
-    encoder,
-    decoder,
-    joiner,
-    lm,
-    lodr: lodr.buffer.slice(lodr.byteOffset, lodr.byteOffset + lodr.byteLength) as ArrayBuffer,
-    tokens: new TextDecoder().decode(tokens),
-    final,
-    vad,
+    encoder: byName["encoder.webgpu.onnx"],
+    decoder: byName["decoder.onnx"] ?? byName["decoder.int8.onnx"],
+    joiner: byName["joiner.int8.onnx"],
+    lm: byName["rnnlm.int8.onnx"],
+    lodr: lodr ? (lodr.buffer.slice(lodr.byteOffset, lodr.byteOffset + lodr.byteLength) as ArrayBuffer) : undefined,
+    tokens: new TextDecoder().decode(byName["tokens.txt"]),
+    final: byName["encoder.final.webgpu.onnx"],
+    vad: byName["silero_vad.onnx"],
   };
   return createOnProvider(pick, () => Engine.create(ort, files, pick.provider));
 }

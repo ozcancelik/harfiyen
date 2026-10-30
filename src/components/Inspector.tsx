@@ -358,6 +358,11 @@ export function Inspector({
                   onChange={onMethod}
                   disabled={running}
                 />
+              ) : info.id === "mihu" ? (
+                <Hint>
+                  {info.name} sesi 0,32 saniyelik parçalarla çok yollu aramayla işler; kelimeler konuşurken gelir.
+                  Model seçimi üst çubukta.
+                </Hint>
               ) : (
                 <Hint>
                   {info.name} sesi {info.engine === "duyu" ? "12–15" : "30"} saniyelik parçalar hâlinde işler;
@@ -516,8 +521,9 @@ export function Inspector({
                 <dd>Ses ve video bu bilgisayardan çıkmaz.</dd>
               </dl>
               <Hint>
-                {info.id === "seda" &&
+                {info.engine === "seda" &&
                   'Sayılar yazıyla gelir ("bin dokuz yüz yirmi üç"). '}
+                {info.id === "mihu" && "Powered by mihu. "}
                 Bir kelimeye tıklayınca kayıt o ana atlar.
               </Hint>
             </Section>

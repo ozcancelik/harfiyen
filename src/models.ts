@@ -3,7 +3,7 @@
 
 import type { SpeechLang } from "./engine/config";
 
-export type ModelId = "seda" | "duyu" | "whisper-turbo" | "whisper-turbo-q4";
+export type ModelId = "seda" | "mihu" | "duyu" | "whisper-turbo" | "whisper-turbo-q4";
 
 export const MODELS_BASE = (import.meta.env.VITE_MODELS_BASE_URL || `${import.meta.env.BASE_URL}models`).replace(/\/+$/, "");
 
@@ -63,6 +63,30 @@ export const MODELS: ModelInfo[] = [
       "silero_vad.onnx",
     ],
     link: "https://huggingface.co/atasoglu/seda-v0.2",
+    live: true,
+    gpuOnly: false,
+    cpuOnly: false,
+    needsF16: false,
+    punctuates: false,
+    langs: ["tr"],
+  },
+  {
+    id: "mihu",
+    engine: "seda",
+    name: "Mihu",
+    tier: "Çok hızlı",
+    note: "Küçük ve düşük gecikmeli; canlı kayıtta ve her cihazda çalışır.",
+    size: "70 MB",
+    spec: "turkish-stt-66m-v2",
+    dir: "turkish-stt-66m-v2",
+    files: [
+      "encoder.webgpu.onnx",
+      "decoder.int8.onnx",
+      "joiner.int8.onnx",
+      "tokens.txt",
+      "silero_vad.onnx",
+    ],
+    link: "https://huggingface.co/mihuai/turkish-stt-66m-v2",
     live: true,
     gpuOnly: false,
     cpuOnly: false,
