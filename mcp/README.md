@@ -18,6 +18,7 @@ cd mcp && npm install
 
 ffmpeg ve ffprobe PATH'te olmalı. Altyazılı video için Google Chrome kurulu olmalı (yolu `CHROME` ile verilebilir;
 puppeteer-core tarayıcı indirmez); Chrome yoksa video ffmpeg ile yazılır, cam, aura ve kinetik stiller çizilemez. Modeller `HARFIYEN_MODELS` ile başka bir klasörden de okunabilir.
+Modeller yoksa araçlar kullanıcıya sorulmasını söyleyen bir hata verir; kullanıcı kabul ederse `download_models` aracı modeli web uygulamasının model sunucusundan `~/.harfiyen-mcp/models` altına indirir (kabul edilmeden hiçbir şey inmez; adres `HARFIYEN_MODELS_URL` ile değişir, hedef `HARFIYEN_MODELS` ile). `status` eksik modelleri boyutlarıyla listeler.
 Transkriptler `~/.harfiyen-mcp/transcripts` altında saklanır (`HARFIYEN_MCP_HOME` ile değişir).
 
 Claude Code'a eklemek için:

@@ -37,7 +37,8 @@ import * as jobs from "./jobs";
 import { fontIdOf, lookOf, saveLookToApp } from "./appstyle";
 import { dubBySentence, dubKey, dubLines, dubWavPath, loadDub, placeLines, removeDub, saveDub, speak, timeToDub, wordsFromText, writeDubWav, type DubMeta } from "./dub";
 import { BUNDLED } from "./fonts";
-import { installed, modelDir, SPEECH_MODELS } from "./models";
+import { download, plan } from "./download";
+import { installed, isReady, SPEECH_MODELS, UNIT_IDS, UNITS } from "./models";
 import { fitVoice, speaker, VOICE_INFO, type Voice, type VoiceLang, type VoiceModel } from "./voices";
 import { METHODS, planCuts, punctuate, tellSpeakers, transcribe, translate, waveformOf } from "./pipeline";
 import { PROJECT_EXT, readProject, writeProject } from "./project";
@@ -153,7 +154,7 @@ server.registerTool(
   "status",
   {
     title: "Durum",
-    description: "Hangi modellerin diskte olduğunu, ffmpeg'in kurulu olup olmadığını ve kayıtlı transkriptleri gösterir.",
+    description: "Hangi modellerin diskte olduğunu, indirilebilecek eksik modelleri (boyutlarıyla), ffmpeg'in kurulu olup olmadığını ve kayıtlı transkriptleri gösterir.",
     inputSchema: {},
   },
   async () => {
@@ -165,7 +166,7 @@ server.registerTool(
           ffmpeg: ok,
           chrome: findChrome(),
           ...m,
-          voices: Object.fromEntries((Object.keys(VOICE_INFO) as VoiceModel[]).map((v) => [v, { ...VOICE_INFO[v], installed: existsSync(join(modelDir(VOICE_INFO[v].dir), "model.json")) }])),
+          voices: Object.fromEntries((Object.keys(VOICE_INFO) as VoiceModel[]).map((v) => [v, { ...VOICE_INFO[v], installed: isReady(`voice-${v}`) }])),
           fonts: BUNDLED.map((f) => f.family),
           transcripts: store.list().length,
         },
@@ -173,6 +174,54 @@ server.registerTool(
         2,
       ),
     );
+  },
+);
+
+server.registerTool(
+  "download_models",
+  {
+    title: "Modelleri indir",
+    description:
+      "Eksik modelleri model sunucusundan bu bilgisayara indirir (status eksik olanları boyutlarıyla listeler). İndirme yüzlerce MB olabilir; " +
+      "KULLANICI KABUL ETMEDEN indirme. İstemci kullanıcıya soru sorabiliyorsa araç onayı kendisi sorar; sormuyorsa önce kullanıcıya sor, kabul ederse onay: true ile çağır. " +
+      "onay verilmeden çağrılırsa yalnızca ne indirileceğini ve boyutunu söyler.",
+    inputSchema: {
+      models: z.array(z.enum(UNIT_IDS)).min(1).describe("İndirilecek modeller: " + Object.values(UNITS).map((u) => `${u.id} (${u.name}, ~${u.mb} MB)`).join("; ")),
+      onay: z.boolean().optional().describe("Kullanıcı bu indirmeyi açıkça kabul ettiyse true"),
+      background: Background,
+    },
+  },
+  async (a, extra) => {
+    try {
+      const p = await plan(a.models);
+      if (!p.units.length) return text("İstenen modellerin hepsi zaten kurulu.");
+      const mb = Math.ceil(p.bytes / 1e6);
+      const list = p.units.map((u) => `- ${u.name} (~${u.mb} MB)`).join("\n");
+      const summary = `${list}\nToplam yaklaşık ${mb} MB, şuraya indirilir: ${p.root}`;
+      let agreed = false;
+      if (server.server.getClientCapabilities()?.elicitation) {
+        // The client asks the user itself, so the answer does not pass through the model.
+        try {
+          const r = await server.server.elicitInput({
+            message: `Şu modeller indirilsin mi?\n${summary}`,
+            requestedSchema: { type: "object", properties: { onay: { type: "boolean", title: "İndir", description: `${mb} MB indirilecek` } }, required: ["onay"] },
+          });
+          if (r.action !== "accept" || r.content?.onay !== true) return text("Kullanıcı indirmeyi kabul etmedi; hiçbir şey indirilmedi.");
+          agreed = true;
+        } catch {
+          // The client could not show the question; fall back to asking through the conversation.
+        }
+      }
+      if (!agreed && a.onay !== true) {
+        return text(`İndirme için kullanıcının onayı gerekiyor:\n${summary}\nKullanıcıya sor; kabul ederse bu aracı aynı modellerle onay: true vererek yeniden çağır. Hiçbir şey indirilmedi.`);
+      }
+      return await heavy("download_models", extra, a.background, async (report) => {
+        await download(p, report);
+        return `İndirildi:\n${list}`;
+      });
+    } catch (e) {
+      return fail(e);
+    }
   },
 );
 

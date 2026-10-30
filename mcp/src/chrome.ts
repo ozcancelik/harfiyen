@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { homedir } from "node:os";
-import { dirname, extname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import puppeteer from "puppeteer-core";
@@ -59,6 +59,9 @@ function sourceStamp(): string {
 
 /** The built page, made on first use (a few seconds) and then kept. */
 async function builtPage(progress: Progress): Promise<string> {
+  // The npm package ships the page built beside dist/server.js (build.mjs).
+  const shipped = join(dirname(fileURLToPath(import.meta.url)), "render-host");
+  if (existsSync(join(shipped, PAGE))) return shipped;
   const cache = join(home, "render-host");
   const dir = join(cache, sourceStamp());
   if (existsSync(join(dir, PAGE))) return dir;
@@ -133,7 +136,7 @@ function serve(dir: string, inputs: Inputs): Promise<{ server: Server; url: stri
     if (path === "/__loudness") return send(inputs.loudness && bytes(inputs.loudness));
     // The built page's files; never outside its folder.
     const file = resolve(dir, "." + path);
-    if (!file.startsWith(dir + "/") && file !== dir) return void res.writeHead(403).end();
+    if (!file.startsWith(dir + sep) && file !== dir) return void res.writeHead(403).end();
     if (!existsSync(file) || !statSync(file).isFile()) return void res.writeHead(404).end();
     res.writeHead(200, { "Content-Type": TYPES[extname(file)] ?? "application/octet-stream" });
     createReadStream(file).pipe(res);

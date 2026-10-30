@@ -8,7 +8,7 @@ import { DuyuEngine, type DuyuConfig } from "../../src/duyu";
 import { Engine, type ModelConfig } from "../../src/engine";
 import type { Ort } from "../../src/engine/models";
 import type { SpeechEngine } from "../../src/engine/stream";
-import { MT_DIRS, PUNCT_DIR, readBytes, readJson, requireDir, SPEAKER_DIR, SPEECH_MODELS, type ModelId, type MtPair } from "./models";
+import { readBytes, readJson, requireUnit, type ModelId, type MtPair } from "./models";
 import { Formatter, type FormatterConfig } from "../../src/punct/formatter";
 import type { WordPieceVocab } from "../../src/punct/wordpiece";
 import { Translator, type MtConfig, type MtVocab } from "../../src/mt/translator";
@@ -31,7 +31,7 @@ function once<K, T>(make: (key: K) => Promise<T>) {
 }
 
 async function loadSpeech(id: ModelId): Promise<SpeechEngine> {
-  const dir = requireDir(SPEECH_MODELS[id].dir, "model.json");
+  const dir = requireUnit(id);
   const file = (n: string) => join(dir, n);
   if (id === "seda") {
     const lodr = readFileSync(file("lodr.bin"));
@@ -84,7 +84,7 @@ async function loadSpeech(id: ModelId): Promise<SpeechEngine> {
 export const speechEngine = once(loadSpeech);
 
 export const formatter = once(async (_: "punct") => {
-  const dir = requireDir(PUNCT_DIR, "model.json");
+  const dir = requireUnit("punct");
   return Formatter.create(
     ort,
     readBytes(join(dir, "formatter.int8.onnx")),
@@ -95,7 +95,7 @@ export const formatter = once(async (_: "punct") => {
 });
 
 export const translator = once(async (pair: MtPair) => {
-  const dir = requireDir(MT_DIRS[pair], "model.json");
+  const dir = requireUnit(`translate-${pair}`);
   return Translator.create(
     ort,
     readBytes(join(dir, "encoder.int8.onnx")),
@@ -107,6 +107,6 @@ export const translator = once(async (pair: MtPair) => {
 });
 
 export const speakerEmbedder = once(async (_: "speakers") => {
-  const dir = requireDir(SPEAKER_DIR, "campplus.onnx");
+  const dir = requireUnit("speakers");
   return SpeakerEmbedder.create(ort, readBytes(join(dir, "campplus.onnx")), "cpu");
 });

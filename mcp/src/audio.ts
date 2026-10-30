@@ -1,8 +1,17 @@
 // Audio and video through ffmpeg: the web app decodes with WebCodecs, which Node does not have.
 
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createInterface } from "node:readline";
+import ffmpegStatic from "ffmpeg-static";
+import { path as ffprobeStatic } from "@ffprobe-installer/ffprobe";
 import { CANCELLED, signal, throwIfCancelled } from "./jobs";
+
+/** $FFMPEG / $FFPROBE if set, else the binary that comes with the package, else the one on PATH. */
+const binary = (env: string | undefined, bundled: string | null | undefined, name: string) =>
+  env || (bundled && existsSync(bundled) ? bundled : name);
+const FFMPEG = binary(process.env.FFMPEG, ffmpegStatic, "ffmpeg");
+const FFPROBE = binary(process.env.FFPROBE, ffprobeStatic, "ffprobe");
 
 export interface MediaInfo {
   duration: number;
@@ -22,16 +31,17 @@ function run(cmd: string, args: string[]): Promise<string> {
     let err = "";
     p.stdout.on("data", (d) => (out += d));
     p.stderr.on("data", (d) => (err += d));
-    p.on("error", (e) => reject(new Error(`${cmd} çalıştırılamadı (kurulu mu?): ${e.message}`)));
-    p.on("close", (code) => (code === 0 ? resolve(out) : reject(new Error(`${cmd} hata verdi: ${err.trim().split("\n").slice(-3).join(" ")}`))));
+    p.on("error", (e) => reject(new Error(`ffprobe çalıştırılamadı (${cmd}): ${e.message}`)));
+    p.on("close", (code) => (code === 0 ? resolve(out) : reject(new Error(`ffprobe hata verdi: ${err.trim().split("\n").slice(-3).join(" ")}`))));
   });
 }
 
 export async function probe(file: string): Promise<MediaInfo> {
   const json = JSON.parse(
-    await run("ffprobe", [
+    await run(FFPROBE, [
       "-v", "error",
-      "-show_entries", "format=duration:stream=codec_type,width,height,channels:stream_tags=rotate:stream_side_data=rotation",
+      // Whole sections, not -show_entries: the ffprobe that ships with the package is older and has no stream_side_data section.
+      "-show_format", "-show_streams",
       "-of", "json", file,
     ]),
   );
@@ -63,14 +73,14 @@ export async function* pcmChunks(file: string, start = 0, end?: number): AsyncGe
   throwIfCancelled();
   const mix = channels > 1 ? ["-af", `pan=mono|c0=${Array.from({ length: channels }, (_, i) => `${(1 / channels).toFixed(6)}*c${i}`).join("+")}`] : [];
   args.push("-vn", ...mix, "-ac", "1", "-ar", "16000", "-f", "f32le", "pipe:1");
-  const p = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
+  const p = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
   const sig = signal();
   const onAbort = () => p.kill();
   sig?.addEventListener("abort", onAbort, { once: true });
   let err = "";
   p.stderr.on("data", (d) => (err += d));
   const exited = new Promise<number>((resolve, reject) => {
-    p.on("error", (e) => reject(new Error(`ffmpeg çalıştırılamadı (kurulu mu?): ${e.message}`)));
+    p.on("error", (e) => reject(new Error(`ffmpeg çalıştırılamadı (${FFMPEG}): ${e.message}`)));
     p.on("close", (code) => resolve(code ?? 1));
   });
   // Pipe reads end anywhere: keep the bytes of a half sample for the next read.
@@ -100,7 +110,7 @@ export async function* pcmChunks(file: string, start = 0, end?: number): AsyncGe
 export function ffmpeg(args: string[], onProgress?: (seconds: number) => void): Promise<void> {
   throwIfCancelled();
   return new Promise((resolve, reject) => {
-    const p = spawn("ffmpeg", ["-v", "error", "-nostdin", "-y", "-progress", "pipe:1", "-nostats", ...args], {
+    const p = spawn(FFMPEG, ["-v", "error", "-nostdin", "-y", "-progress", "pipe:1", "-nostats", ...args], {
       stdio: ["ignore", "pipe", "pipe"],
     });
     const sig = signal();
@@ -120,7 +130,7 @@ export function ffmpeg(args: string[], onProgress?: (seconds: number) => void): 
     });
     p.on("error", (e) => {
       sig?.removeEventListener("abort", onAbort);
-      reject(new Error(`ffmpeg çalıştırılamadı (kurulu mu?): ${e.message}`));
+      reject(new Error(`ffmpeg çalıştırılamadı (${FFMPEG}): ${e.message}`));
     });
     p.on("close", (code) => {
       sig?.removeEventListener("abort", onAbort);

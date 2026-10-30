@@ -9,7 +9,7 @@ import { createFrontend, decodeAsset, type Frontend } from "../../src/tts/antali
 import { Engine as MiniEngine, speak as miniSpeak, type MiniManifest } from "../../src/tts/antalia-mini/tts";
 import { Ema, loadNormalizer, RATE, type EmaMeta } from "../../src/tts/ema";
 import { Supertonic, type SupertonicManifest } from "../../src/tts/supertonic";
-import { readBytes, readJson, requireDir } from "./models";
+import { readBytes, readJson, requireUnit } from "./models";
 
 const ort = ortNode as unknown as Ort;
 
@@ -81,7 +81,7 @@ async function loadMini(dir: string): Promise<Speaker> {
 }
 
 async function load(model: VoiceModel): Promise<Speaker> {
-  const dir = requireDir(VOICE_INFO[model].dir, "model.json");
+  const dir = requireUnit(`voice-${model}`);
   const file = (n: string) => join(dir, n);
   const opts = { executionProviders: ["cpu"], graphOptimizationLevel: "all" as const, logSeverityLevel: 3 as const };
   const session = (n: string) => ort.InferenceSession.create(readBytes(file(n)), opts);
