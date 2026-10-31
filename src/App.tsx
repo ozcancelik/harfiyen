@@ -156,7 +156,7 @@ import {
   type Speakers,
 } from "./lib/speakers";
 import { sourceKey, type Translation, type TranslationLang } from "./lib/translation";
-import { SPEECH_LANGS } from "./engine/languages";
+import { DEFAULT_LANG } from "./engine/languages";
 import { hasTranslation, LANG_NAMES } from "./lib/lang";
 import { DEFAULT_MODEL, modelInfo, MODELS, type ModelId } from "./models";
 
@@ -325,14 +325,7 @@ export function App() {
   }, [settingsOpen, engine.phase, model]);
   const [method, setMethod] = useState<DecodingMethod>("beam-lm");
   /** The language spoken in the media, for the next transcription; a project brings its own. */
-  const [videoLang, setVideoLang] = useState<SpeechLang>(() => {
-    const saved = localStorage.getItem("harfiyen.videoLang");
-    return SPEECH_LANGS.find((l) => l.code === saved)?.code ?? "tr";
-  });
-  useEffect(
-    () => localStorage.setItem("harfiyen.videoLang", videoLang),
-    [videoLang],
-  );
+  const [videoLang, setVideoLang] = useState<SpeechLang>(DEFAULT_LANG);
   const [settings, setSettings] = useState<CaptionSettings>(loadSettings);
   /** The part of the video shown and exported; belongs to the project, unlike the style. */
   const [crop, setCrop] = useState<Crop | null>(null);
@@ -712,8 +705,10 @@ export function App() {
       setCrop(null);
       setTrim(null);
       setJumpCut(offJumpCut());
+      // The language belongs to the file, not to the project before it.
+      setVideoLang(DEFAULT_LANG);
       // Not transcribed yet: first the frame and the part to use, then "Yazıya dök".
-      open(f, optionsFor(method, videoLang));
+      open(f, optionsFor(method, DEFAULT_LANG));
     },
     [
       open,
@@ -766,6 +761,7 @@ export function App() {
     setTrim(null);
     setJumpCut(offJumpCut());
     setCustomText("");
+    setVideoLang(DEFAULT_LANG);
     clear();
   };
 

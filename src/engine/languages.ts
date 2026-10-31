@@ -41,6 +41,9 @@ export type SpeechLang = (typeof SPEECH_LANGS)[number]["code"];
 
 export const LANG_TOKEN = Object.fromEntries(SPEECH_LANGS.map((l) => [l.code, l.token])) as Record<SpeechLang, number>;
 
+/** The language a new project starts with. */
+export const DEFAULT_LANG: SpeechLang = "tr";
+
 /** Languages with a ready quality bar; the rest are experimental, shown with a note. */
 export const MAIN_LANGS: readonly SpeechLang[] = ["tr", "en", "de", "fr", "es", "it", "pt", "nl", "ru", "pl"];
 
