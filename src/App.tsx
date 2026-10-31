@@ -85,6 +85,7 @@ import {
   saveDub,
 } from "./lib/projectStore";
 import { useBurner } from "./lib/useBurner";
+import { useTabProgress } from "./lib/useTabProgress";
 import { useSourceInfo } from "./lib/useSourceInfo";
 import { useWaveform } from "./lib/useWaveform";
 import { useLogo } from "./lib/logo";
@@ -463,6 +464,13 @@ export function App() {
     trimming ? NO_CUTS : cuts,
   );
   const following = useFollow(player, job);
+  useTabProgress(
+    burner.state.status === "running"
+      ? burner.state.progress * 100
+      : job?.status === "running" && !job.live && job.duration
+        ? (job.decoded / job.duration) * 100
+        : null,
+  );
   // The style cards show the project's ground; only made while they are on screen.
   const ground = useGroundPreview({
     active: inspectorTab === "captions" || inspectorTab === "scene",
