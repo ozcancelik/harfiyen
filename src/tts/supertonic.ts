@@ -4,9 +4,10 @@
 // styles shipped with the model.
 
 import type { InferenceSession } from "onnxruntime-web";
+import type { MtLang } from "../engine/languages";
 import type { Ort } from "../engine/models";
 
-export type SupertonicLang = "en" | "tr";
+export type SupertonicLang = MtLang;
 
 export interface SupertonicManifest {
   sampleRate: number;

@@ -563,8 +563,13 @@ def prepare_whisper() -> None:
     print(f"whisper: {sum(whisper['files'].values()) / 1e6:.0f} MB")
 
 
-# Translation, both ways: Turkish -> English, and English -> Turkish for English videos. Same architecture.
-MT_REPOS = ["Helsinki-NLP/opus-mt-tc-big-tr-en", "Helsinki-NLP/opus-mt-tc-big-en-tr"]
+# Translation, to and from English: Turkish (the larger tc-big models), and German, French, Spanish and Russian
+# (the base opus-mt models). Same architecture; other pairs go through English.
+MT_REPOS = [
+    "Helsinki-NLP/opus-mt-tc-big-tr-en",
+    "Helsinki-NLP/opus-mt-tc-big-en-tr",
+    *[f"Helsinki-NLP/opus-mt-{a}-{b}" for l in ["de", "fr", "es", "ru"] for a, b in [(l, "en"), ("en", l)]],
+]
 MT_FILES = ["encoder.int8.onnx", "decoder.int8.onnx", "spm.json"]
 
 

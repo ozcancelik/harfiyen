@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
-// Translation: the transcript's sentences, one at a time, on the CPU: Turkish to English with opus-mt-tc-big-tr-en,
-// English to Turkish with opus-mt-tc-big-en-tr.
+// Translation: the transcript's sentences, one at a time, on the CPU, with a Marian (opus-mt) model per direction.
+// A pair with no English at either end goes through English: each sentence is translated twice.
 
 import * as ort from "onnxruntime-web/webgpu";
 import ortWasmUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
@@ -13,7 +13,7 @@ import { fetchAll, fetchManifest } from "./modelStore";
 declare const self: DedicatedWorkerGlobalScope;
 
 export type ToMt =
-  | { type: "translate"; jobId: number; pair: MtPair; sentences: string[] }
+  | { type: "translate"; jobId: number; pairs: MtPair[]; sentences: string[] }
   | { type: "cancel"; jobId: number };
 
 export type FromMt =
@@ -71,14 +71,18 @@ function getTranslator(jobId: number, pair: MtPair) {
   return t;
 }
 
-async function translate(jobId: number, pair: MtPair, sentences: string[]) {
+async function translate(jobId: number, pairs: MtPair[], sentences: string[]) {
   const started = performance.now();
-  const mt = await getTranslator(jobId, pair);
+  // One after the other: the downloads share one progress bar.
+  const chain: Translator[] = [];
+  for (const pair of pairs) chain.push(await getTranslator(jobId, pair));
   const texts: string[] = [];
   for (let i = 0; i < sentences.length; i++) {
     if (cancelled.has(jobId)) return post({ type: "cancelled", jobId });
     post({ type: "progress", jobId, done: i, total: sentences.length });
-    texts.push(await mt.translate(sentences[i]));
+    let text = sentences[i];
+    for (const mt of chain) text = await mt.translate(text);
+    texts.push(text);
   }
   post({ type: "done", jobId, texts, elapsed: (performance.now() - started) / 1000 });
 }
@@ -91,7 +95,7 @@ self.onmessage = (ev: MessageEvent<ToMt>) => {
   }
   // One job at a time: a new one waits for the cancelled one to stop.
   queue = queue.then(() =>
-    translate(m.jobId, m.pair, m.sentences)
+    translate(m.jobId, m.pairs, m.sentences)
       .catch((e) => post({ type: "error", jobId: m.jobId, message: e instanceof Error ? e.message : String(e) }))
       .finally(() => cancelled.delete(m.jobId)),
   );

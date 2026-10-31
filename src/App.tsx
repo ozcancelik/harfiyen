@@ -145,7 +145,7 @@ import {
   type TimeRange,
 } from "./lib/useTranscriber";
 import { warmManifests } from "./lib/modelLibrary";
-import { useTranslator } from "./lib/useTranslator";
+import { translationLang, useTranslator } from "./lib/useTranslator";
 import { useSpeakers } from "./lib/useSpeakers";
 import {
   assign as assignSpeaker,
@@ -154,8 +154,9 @@ import {
   rename as renameSpeaker,
   type Speakers,
 } from "./lib/speakers";
-import { sourceKey, type Translation } from "./lib/translation";
-import { LANG_NAMES } from "./lib/lang";
+import { sourceKey, type Translation, type TranslationLang } from "./lib/translation";
+import { SPEECH_LANGS } from "./engine/languages";
+import { hasTranslation, LANG_NAMES } from "./lib/lang";
 import { DEFAULT_MODEL, modelInfo, MODELS, type ModelId } from "./models";
 
 const EMPTY_BANDS = new Float32Array(0);
@@ -323,9 +324,10 @@ export function App() {
   }, [settingsOpen, engine.phase, model]);
   const [method, setMethod] = useState<DecodingMethod>("beam-lm");
   /** The language spoken in the media, for the next transcription; a project brings its own. */
-  const [videoLang, setVideoLang] = useState<SpeechLang>(() =>
-    localStorage.getItem("harfiyen.videoLang") === "en" ? "en" : "tr",
-  );
+  const [videoLang, setVideoLang] = useState<SpeechLang>(() => {
+    const saved = localStorage.getItem("harfiyen.videoLang");
+    return SPEECH_LANGS.find((l) => l.code === saved)?.code ?? "tr";
+  });
   useEffect(
     () => localStorage.setItem("harfiyen.videoLang", videoLang),
     [videoLang],
@@ -874,6 +876,11 @@ export function App() {
       : null;
   /** The language spoken in the media, as the open transcript was made in. */
   const sourceLang: SpeechLang = job ? (job.options.lang ?? "tr") : voice.lang;
+  /** What the next translation is into: the pick, else the open translation's, else English (Turkish for English). */
+  const [targetPick, setTargetPick] = useState<TranslationLang | null>(null);
+  const targetLang: TranslationLang =
+    [targetPick, translation?.lang].find((l): l is TranslationLang => !!l && l !== sourceLang) ??
+    (translationLang(sourceLang) as TranslationLang);
   useEffect(() => {
     if (isTts) setCustomText(textFromWords(words));
   }, [isTts, words]);
@@ -1102,11 +1109,11 @@ export function App() {
   const cancelSpeakers = speakerTool.cancel;
   useEffect(() => cancelSpeakers(), [job?.id, cancelSpeakers]);
   /** `then` runs with the translation once it is made (not if it is cancelled or the job changes). */
-  const translate = (then?: (t: Translation) => void) => {
+  const translate = (then?: (t: Translation) => void, into: TranslationLang = targetLang) => {
     if (!job) return;
     const id = job.id;
     const before = job.translation;
-    translator.translate(words, sourceLang, (t) => {
+    translator.translate(words, sourceLang, into, (t) => {
       // A new translation replaces any edits to the old one; ⌘Z brings them back.
       if (before) {
         history.current.push({ jobId: id, en: true, words: before.words });
@@ -1296,7 +1303,7 @@ export function App() {
   );
   const chooseVideoLang = (l: SpeechLang) => {
     setVideoLang(l);
-    // Only Whisper knows English: its light version, unless it cannot run here.
+    // Only Whisper knows the other languages: its light version, unless it cannot run here.
     if (!modelInfo(model).langs.includes(l) && !gpuReason)
       setModel("whisper-turbo-q4");
   };
@@ -2264,11 +2271,11 @@ export function App() {
           onDubOverflow={() => {
             if (!dubOverflow) return;
             // The line as it is read: in the translation for an English dub.
-            setShowEn(voice.lang === "en");
+            setShowEn(voice.lang !== sourceLang);
             player.seek(dubOverflow.start);
           }}
           onExtendTrim={longerTrim && (() => changeTrim(longerTrim))}
-          dubName={`${voice.lang === "en" ? `${name}.en` : name}.seslendirme.wav`}
+          dubName={`${voice.lang === "tr" ? name : `${name}.${voice.lang}`}.seslendirme.wav`}
           voice={voice}
           onVoice={setVoice}
           preview={dubber.preview}
@@ -2310,11 +2317,13 @@ export function App() {
             onClear: () => commitSpeakers(undefined),
           }}
           translationStale={translationStale}
-          canTranslate={!!job && job.status !== "running" && words.length > 0}
+          targetLang={targetLang}
+          onTargetLang={setTargetPick}
+          canTranslate={!!job && job.status !== "running" && words.length > 0 && hasTranslation(sourceLang)}
           onTranslate={() => translate()}
           onCancelTranslate={translator.cancel}
-          canTranslateDub={editable && !!job?.file && words.length > 0}
-          onTranslateDub={() => translate((t) => startDub(t.words))}
+          canTranslateDub={editable && !!job?.file && words.length > 0 && hasTranslation(sourceLang)}
+          onTranslateDub={() => translate((t) => startDub(t.words), voice.lang)}
           tab={inspectorTab}
           onTab={setInspectorTab}
           textMode={textMode}

@@ -4,6 +4,7 @@
 
 import type * as OrtWeb from "onnxruntime-web";
 import type { SpeechLang } from "../engine/config";
+import { LANG_TOKEN } from "../engine/languages";
 import type { EncoderProvider, Ort } from "../engine/models";
 
 type Session = OrtWeb.InferenceSession;
@@ -46,8 +47,6 @@ export interface Generation {
 /** Repeats of a tail block that count as a loop, by block length. */
 const loopRepeats = (len: number) => (len <= 2 ? 8 : 4);
 
-/** Whisper's language tokens follow start-of-transcript in its own order: English first, Turkish tenth. */
-const LANG_TOKEN: Record<SpeechLang, number> = { en: 1, tr: 10 };
 
 export class WhisperModel {
   /** The language token the prompt asks for; Turkish unless a recognizer says otherwise. */

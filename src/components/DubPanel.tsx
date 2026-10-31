@@ -1,7 +1,8 @@
 import type { RefObject } from "react";
 import type { SpeechLang } from "../engine";
-import { LANG_NAMES } from "../lib/lang";
-import { translateProgress, translationLang as targetOf, type TranslateState } from "../lib/useTranslator";
+import { MT_LANGS } from "../engine/languages";
+import { hasTranslation as canTranslateLang, LANG_NAMES } from "../lib/lang";
+import { translateProgress, type TranslateState } from "../lib/useTranslator";
 import {
   DEFAULT_VOICE,
   MAX_ORIGINAL,
@@ -13,7 +14,7 @@ import {
 } from "../lib/useDubber";
 import { STUDIO } from "./CaptionStudio";
 import { Progress } from "./Indicators";
-import { OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
+import { OPT_NOTE, OPT_TEXT, OPT_TITLE, Select, type Option } from "./Select";
 import {
   Button,
   Hint,
@@ -72,12 +73,13 @@ const MODELS: Record<
 const LANG_MODELS: Record<DubLang, VoiceModel[]> = {
   tr: ["ema", "mini", "ahenk", "supertonic"],
   en: ["supertonic"],
+  de: ["supertonic"],
+  fr: ["supertonic"],
+  es: ["supertonic"],
+  ru: ["supertonic"],
 };
 
-const LANGS: { lang: DubLang; label: string }[] = [
-  { lang: "tr", label: "Türkçe" },
-  { lang: "en", label: "İngilizce" },
-];
+const LANG_OPTIONS: Option<DubLang>[] = MT_LANGS.map((l) => ({ value: l, label: LANG_NAMES[l] }));
 
 /** Supertonic's voices, with the names and notes its demo gives them. */
 const STYLES: Record<string, { name: string; note: string; group: string }> = {
@@ -193,8 +195,8 @@ export function DubPanel({
   // A dub in the other language reads the translation into it.
   const fromTranslation = (!textMode || canTranslateDub) && voice.lang !== sourceLang;
   const hasTranslation = translation && translationLang === voice.lang;
-  // The transcript is translated into its other language only.
-  const translatable = targetOf(sourceLang) === voice.lang;
+  // The transcript is translated into the voice's language, when a model covers both.
+  const translatable = canTranslateLang(sourceLang) && sourceLang !== voice.lang;
   // The one button translates first.
   const needsTranslation = fromTranslation && !hasTranslation && translatable;
   const ready = textMode && !fromTranslation ? customText.trim().length > 0 : needsTranslation ? canTranslateDub : canDub;
@@ -212,20 +214,16 @@ export function DubPanel({
               : "Transkript yapay bir sesle yeniden okunur. Her altyazı satırı kendi zamanında başlar; yerine sığmayan satırlar biraz hızlı okunur."}{" "}
           Seçili ses ilk kullanımda yaklaşık {model.size} indirir.
         </Hint>
-        <RowGroup role="group" aria-label="Seslendirme dili">
+        <RowGroup>
           <RowLabel>Dil</RowLabel>
-          {LANGS.map((l) => (
-            <button
-              key={l.lang}
-              type="button"
-              className={PRESET}
-              aria-pressed={voice.lang === l.lang}
-              disabled={working}
-              onClick={() => setLang(l.lang)}
-            >
-              {l.label}
-            </button>
-          ))}
+          <Select<DubLang>
+            label="Seslendirme dili"
+            value={voice.lang}
+            options={LANG_OPTIONS}
+            onChange={setLang}
+            disabled={working}
+            render={(o) => <span className={OPT_TITLE}>{o.label}</span>}
+          />
         </RowGroup>
         {textMode && !fromTranslation && (
           <textarea
@@ -233,9 +231,9 @@ export function DubPanel({
             rows={5}
             className="block w-full resize-y rounded-ui border border-line bg-bg px-2.5 py-2 text-[13px] leading-[1.55] text-fg outline-none focus:border-cini disabled:opacity-45 [font-family:inherit]"
             placeholder={
-              voice.lang === "en"
-                ? "Write or paste the text to read aloud…"
-                : "Okunacak metni buraya yaz ya da yapıştır…"
+              voice.lang === "tr"
+                ? "Okunacak metni buraya yaz ya da yapıştır…"
+                : "Write or paste the text to read aloud…"
             }
             value={customText}
             disabled={working}
@@ -245,14 +243,14 @@ export function DubPanel({
         )}
         {fromTranslation && !hasTranslation && !translatable && (
           <Hint>
-            {LANG_NAMES[voice.lang]} seslendirme için {LANG_NAMES[sourceLang]} transkriptin çevirisi gerekir;{" "}
-            {LANG_NAMES[sourceLang]}den {LANG_NAMES[voice.lang]}ye çeviri yok.
+            Seslendirme dili {LANG_NAMES[voice.lang]}, transkript {LANG_NAMES[sourceLang]}: çeviri gerekir, ama bu dil için
+            çeviri modeli yok.
           </Hint>
         )}
         {needsTranslation && (
           <Hint>
-            {LANG_NAMES[voice.lang]} seslendirme için transkript önce {LANG_NAMES[voice.lang]}ye çevrilir; çeviri modeli
-            ilk kullanımda yaklaşık 360 MB indirir.
+            Seslendirme dili {LANG_NAMES[voice.lang]}: transkript önce çevrilir; çeviri modeli ilk kullanımda indirilir
+            (yaklaşık 135 MB, Türkçe için 360 MB).
           </Hint>
         )}
         {fromTranslation && hasTranslation && translationStale && (

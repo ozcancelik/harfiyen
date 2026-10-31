@@ -70,7 +70,7 @@ export function ModelChoices({
         {MODELS.map((m) => {
           const isCached = cached?.has(m.id) ?? false;
           const unavailable = !m.langs.includes(lang)
-            ? `Yalnızca ${m.langs.map((l) => LANG_NAMES[l]).join(" ve ")}; videodaki dil ${LANG_NAMES[lang]}.`
+            ? `Yalnızca ${m.langs.map((l) => LANG_NAMES[l]).join(" ve ")} anlar; videodaki dil ${LANG_NAMES[lang]}.`
             : m.gpuOnly && gpuReason
               ? gpuReason
               : offline && !isCached
