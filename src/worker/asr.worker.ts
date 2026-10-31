@@ -15,7 +15,7 @@ import type { SpeechEngine, SpeechStream } from "../engine/stream";
 import { modelFileUrl, modelInfo, packFileUrl, PUNCT_PACK, type ModelId, type ModelInfo } from "../models";
 import { Formatter, type FormatterConfig } from "../punct/formatter";
 import type { WordPieceVocab } from "../punct/wordpiece";
-import { fetchAll } from "./modelStore";
+import { fetchAll, fetchManifest } from "./modelStore";
 import { readPcm } from "./pcm";
 import { BandTracker } from "../render/aura";
 import { WhisperEngine, type WhisperConfig } from "../whisper";
@@ -81,9 +81,9 @@ function wasmThreads(provider: EncoderProvider, searchOnCpu: boolean) {
 }
 
 async function readConfig<T>(m: ModelInfo): Promise<T> {
-  const res = await fetch(modelFileUrl(m, "model.json"), { cache: "no-cache" });
-  if (!res.ok) throw new JobError("model", "model.json bulunamadı. Önce `npm run models` çalıştırılmalı.");
-  return res.json();
+  const { data } = await fetchManifest<T>(modelFileUrl(m, "model.json"));
+  if (!data) throw new JobError("model", "model.json bulunamadı. Önce `npm run models` çalıştırılmalı.");
+  return data;
 }
 
 /** Model files plus the wasm runtime, with progress posted to the page. */
@@ -206,9 +206,8 @@ let punctPromise: Promise<Formatter> | null = null;
 /** The formatter is loaded on first use (≈30 MB, cached like the rest). */
 function getPunctuator(id: number): Promise<Formatter> {
   punctPromise ??= (async () => {
-    const res = await fetch(packFileUrl(PUNCT_PACK, PUNCT_PACK.manifest), { cache: "no-cache" });
-    if (!res.ok) throw new Error("Noktalama modeli bulunamadı. `npm run models` çalıştırılmalı.");
-    const cfg: FormatterConfig = await res.json();
+    const { data: cfg } = await fetchManifest<FormatterConfig>(packFileUrl(PUNCT_PACK, PUNCT_PACK.manifest));
+    if (!cfg) throw new Error("Noktalama modeli bulunamadı. `npm run models` çalıştırılmalı.");
     const [model, vocab] = await fetchAll(
       PUNCT_PACK.files.map((f) => ({ url: packFileUrl(PUNCT_PACK, f), size: cfg.files[f] })),
       (done, total) => post({ type: "punct-progress", id, phase: "download", done, total }),

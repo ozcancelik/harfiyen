@@ -3,7 +3,7 @@
 
 import ortWasmUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
 import { PACKS, packFileUrl, type ModelPack } from "../models";
-import { complete, listCached, removeCached, storeFile, type CachedFile, type FileRequest } from "../worker/modelStore";
+import { complete, fetchManifest, listCached, removeCached, storeFile, type CachedFile, type FileRequest } from "../worker/modelStore";
 import { fileSize } from "./format";
 import { askPersist } from "./projectStore";
 
@@ -37,20 +37,20 @@ export interface Library {
 
 const manifests = new Map<string, Record<string, number>>();
 
-/** File sizes from the pack's manifest, or null when it cannot be read. */
-async function sizesOf(p: ModelPack): Promise<Record<string, number> | null> {
+/** File sizes from the pack's manifest (network or cache), and whether the network could not be reached. */
+async function sizesOf(p: ModelPack): Promise<{ files: Record<string, number> | null; offline: boolean }> {
   const url = packFileUrl(p, p.manifest);
-  const known = manifests.get(url);
-  if (known) return known;
-  try {
-    const res = await fetch(url, { cache: "no-cache" });
-    if (!res.ok) return null;
-    const files: Record<string, number> = (await res.json()).files ?? {};
-    manifests.set(url, files);
-    return files;
-  } catch {
-    return null;
+  const { data, offline } = await fetchManifest<{ files?: Record<string, number> }>(url);
+  if (data?.files) {
+    manifests.set(url, data.files);
+    return { files: data.files, offline };
   }
+  return { files: manifests.get(url) ?? null, offline };
+}
+
+/** Cache every model's manifest in the background so sizes and configs are ready offline. */
+export function warmManifests(): void {
+  void Promise.all(PACKS.map(sizesOf)).catch(() => {});
 }
 
 /** A stored entry counts if its size matches; without a known size (runtime, offline) any entry does. */
@@ -71,7 +71,8 @@ function fileState(stored: Map<string, CachedFile[]>, f: FileRequest) {
 }
 
 export async function loadLibrary(): Promise<Library> {
-  const [sizes, cached] = await Promise.all([Promise.all(PACKS.map(sizesOf)), listCached()]);
+  const [manifestsResult, cached] = await Promise.all([Promise.all(PACKS.map(sizesOf)), listCached()]);
+  const sizes = manifestsResult.map((r) => r.files);
   const stored = new Map<string, CachedFile[]>();
   for (const c of cached) stored.set(c.url, [...(stored.get(c.url) ?? []), c]);
 
@@ -110,7 +111,7 @@ export async function loadLibrary(): Promise<Library> {
     stored,
     stale: cached.filter((c) => !used.has(c.key)),
     bytes: cached.reduce((a, c) => a + c.bytes, 0),
-    offline: sizes.some((s) => !s),
+    offline: navigator.onLine === false || manifestsResult.every((r) => r.offline),
   };
 }
 

@@ -8,7 +8,7 @@ import ortMjsUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url";
 import type { Ort } from "../engine/models";
 import { MT_PACKS, packFileUrl, type MtPair } from "../models";
 import { Translator, type MtConfig, type MtVocab } from "../mt/translator";
-import { fetchAll } from "./modelStore";
+import { fetchAll, fetchManifest } from "./modelStore";
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -35,9 +35,8 @@ let queue: Promise<void> = Promise.resolve();
 
 async function load(jobId: number, pair: MtPair): Promise<Translator> {
   const MT_PACK = MT_PACKS[pair];
-  const res = await fetch(packFileUrl(MT_PACK, MT_PACK.manifest), { cache: "no-cache" });
-  if (!res.ok) throw new Error("Çeviri modeli bulunamadı. Önce `npm run models` çalıştırılmalı.");
-  const cfg: MtConfig = await res.json();
+  const { data: cfg } = await fetchManifest<MtConfig>(packFileUrl(MT_PACK, MT_PACK.manifest));
+  if (!cfg) throw new Error("Çeviri modeli bulunamadı. Önce `npm run models` çalıştırılmalı.");
   const [encoder, decoder, spm, wasm] = await fetchAll(
     [
       ...MT_PACK.files.map((f) => ({ url: packFileUrl(MT_PACK, f), size: cfg.files[f] })),

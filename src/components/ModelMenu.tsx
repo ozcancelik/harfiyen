@@ -15,6 +15,10 @@ export interface ModelProps {
   locked: boolean;
   /** The language spoken in the media: models that do not know it are not offered. */
   lang: SpeechLang;
+  /** Models already stored in the browser cache (ready offline). */
+  cached?: ReadonlySet<ModelId>;
+  /** Browser is offline: uncached models cannot be downloaded right now. */
+  offline?: boolean;
 }
 
 /** Toolbar control: which speech model transcribes. */
@@ -49,17 +53,29 @@ export function ModelMenu(props: ModelProps) {
 }
 
 /** The models to pick from; also in the phone toolbar's "⋯" menu. */
-export function ModelChoices({ value, onChange, gpuReason, locked, lang, onDone }: ModelProps & { onDone: () => void }) {
+export function ModelChoices({
+  value,
+  onChange,
+  gpuReason,
+  locked,
+  lang,
+  cached,
+  offline,
+  onDone,
+}: ModelProps & { onDone: () => void }) {
   return (
     <>
       <MenuGroup>
         <MenuTitle>Yazıya döken model</MenuTitle>
         {MODELS.map((m) => {
+          const isCached = cached?.has(m.id) ?? false;
           const unavailable = !m.langs.includes(lang)
             ? `Yalnızca ${m.langs.map((l) => LANG_NAMES[l]).join(" ve ")}; videodaki dil ${LANG_NAMES[lang]}.`
-            : m.gpuOnly
+            : m.gpuOnly && gpuReason
               ? gpuReason
-              : null;
+              : offline && !isCached
+                ? "Henüz indirilmedi; çevrimdışıyken kullanılamaz."
+                : null;
           return (
             <MenuItem
               key={m.id}
@@ -80,6 +96,7 @@ export function ModelChoices({ value, onChange, gpuReason, locked, lang, onDone 
                   <span>{m.name}</span>
                   <MenuNote>
                     {m.tier} · {m.size}
+                    {isCached && <span className="text-firuze"> · İndirildi</span>}
                   </MenuNote>
                 </span>
                 <MenuNote>{unavailable ?? m.note}</MenuNote>

@@ -52,6 +52,7 @@ import { MoreMenu } from "./components/MoreMenu";
 import { Settings } from "./components/Settings";
 import { ProviderMenu } from "./components/ProviderMenu";
 import { StatusBar } from "./components/StatusBar";
+import { UpdateToast } from "./components/UpdateToast";
 import { Timeline, TIMELINE } from "./components/Timeline";
 import { Transcript } from "./components/Transcript";
 import { Viewer } from "./components/Viewer";
@@ -137,11 +138,13 @@ import {
 import { DUB_RATE, dubMetrics } from "./tts/dub";
 import { useProjects } from "./lib/useProjects";
 import {
+  cachedSpeechModels,
   canResume,
   modelIsCached,
   useTranscriber,
   type TimeRange,
 } from "./lib/useTranscriber";
+import { warmManifests } from "./lib/modelLibrary";
 import { useTranslator } from "./lib/useTranslator";
 import { useSpeakers } from "./lib/useSpeakers";
 import {
@@ -153,7 +156,7 @@ import {
 } from "./lib/speakers";
 import { sourceKey, type Translation } from "./lib/translation";
 import { LANG_NAMES } from "./lib/lang";
-import { DEFAULT_MODEL, modelInfo } from "./models";
+import { DEFAULT_MODEL, modelInfo, MODELS, type ModelId } from "./models";
 
 const EMPTY_BANDS = new Float32Array(0);
 const NO_CUTS: TimeRange[] = [];
@@ -298,6 +301,26 @@ export function App() {
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [offline, setOffline] = useState(
+    () => typeof navigator !== "undefined" && navigator.onLine === false,
+  );
+  const [cachedModels, setCachedModels] = useState<ReadonlySet<ModelId>>(
+    () => new Set(),
+  );
+  useEffect(() => {
+    warmManifests();
+    const syncOnline = () => setOffline(navigator.onLine === false);
+    window.addEventListener("online", syncOnline);
+    window.addEventListener("offline", syncOnline);
+    return () => {
+      window.removeEventListener("online", syncOnline);
+      window.removeEventListener("offline", syncOnline);
+    };
+  }, []);
+  useEffect(() => {
+    if (settingsOpen) return;
+    void cachedSpeechModels().then(setCachedModels);
+  }, [settingsOpen, engine.phase, model]);
   const [method, setMethod] = useState<DecodingMethod>("beam-lm");
   /** The language spoken in the media, for the next transcription; a project brings its own. */
   const [videoLang, setVideoLang] = useState<SpeechLang>(() =>
@@ -1650,7 +1673,33 @@ export function App() {
     gpuReason,
     locked: engineBusy,
     lang: videoLang,
+    cached: cachedModels,
+    offline,
   };
+  // When offline and the selected model is not cached, switch to one that is.
+  useEffect(() => {
+    if (!offline || engineBusy || cachedModels.has(model)) return;
+    const fallback = MODELS.find(
+      (m) =>
+        cachedModels.has(m.id) &&
+        m.langs.includes(videoLang) &&
+        !(m.gpuOnly && gpuReason),
+    );
+    if (fallback) {
+      setModel(fallback.id);
+      setNotice(
+        `Çevrimdışısın; bu tarayıcıda hazır olan ${fallback.name} modeline geçildi.`,
+      );
+    }
+  }, [
+    offline,
+    engineBusy,
+    cachedModels,
+    model,
+    videoLang,
+    gpuReason,
+    setModel,
+  ]);
   const providerProps = {
     value: provider,
     engine,
@@ -2130,13 +2179,30 @@ export function App() {
                 fine={
                   <>
                     Dosyayı pencereye sürükleyebilirsin: MP4, MOV, MKV, WebM,
-                    MP3, M4A, WAV, FLAC, OGG; altyazı için SRT ve VTT. İlk
-                    kullanımda yaklaşık {chosen.size} model ({chosen.name})
-                    indirilir ve saklanır.
-                    {engine.phase === "idle" && (
+                    MP3, M4A, WAV, FLAC, OGG; altyazı için SRT ve VTT.{" "}
+                    {cachedModels.has(model) ? (
                       <>
-                        {" "}
-                        <LinkButton onClick={prepare}>Şimdi indir</LinkButton>
+                        {chosen.name} modeli bu tarayıcıda hazır; internet
+                        olmadan da çalışır.
+                      </>
+                    ) : offline ? (
+                      <>
+                        Çevrimdışısın ve {chosen.name} modeli henüz
+                        indirilmemiş. Modeller bir kez indirildikten sonra
+                        internet olmadan çalışır.
+                      </>
+                    ) : (
+                      <>
+                        İlk kullanımda yaklaşık {chosen.size} model (
+                        {chosen.name}) indirilir ve saklanır.
+                        {engine.phase === "idle" && (
+                          <>
+                            {" "}
+                            <LinkButton onClick={prepare}>
+                              Şimdi indir
+                            </LinkButton>
+                          </>
+                        )}
                       </>
                     )}
                   </>
@@ -2387,6 +2453,7 @@ export function App() {
         onDiscard={discardJob}
         onResume={resumeJob}
       />
+      <UpdateToast busy={engineBusy} />
     </div>
   );
 }

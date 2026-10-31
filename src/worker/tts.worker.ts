@@ -20,7 +20,7 @@ import type { DubClip } from "../tts/dub";
 import { Ema, loadNormalizer, RATE, type EmaMeta } from "../tts/ema";
 import { Mini, type MiniManifest } from "../tts/mini";
 import { Supertonic, type SupertonicManifest } from "../tts/supertonic";
-import { fetchAll } from "./modelStore";
+import { fetchAll, fetchManifest } from "./modelStore";
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -102,9 +102,8 @@ let adapter: GPUAdapter | null | undefined;
 
 async function load(jobId: number, model: VoiceModel): Promise<Speaker> {
   const pack = VOICE_PACKS[model];
-  const res = await fetch(packFileUrl(pack, pack.manifest), { cache: "no-cache" });
-  if (!res.ok) throw new Error("Seslendirme modeli bulunamadı. Önce `npm run models` çalıştırılmalı.");
-  const meta = await res.json();
+  const { data: meta } = await fetchManifest<Record<string, any>>(packFileUrl(pack, pack.manifest));
+  if (!meta) throw new Error("Seslendirme modeli bulunamadı. Önce `npm run models` çalıştırılmalı.");
   const names = pack.files;
   const runtime = adapter === undefined ? [{ url: ortWasmUrl, size: ORT_WASM_SIZE, approx: true }] : [];
   const files = await fetchAll(
