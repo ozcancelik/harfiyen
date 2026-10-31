@@ -1876,6 +1876,14 @@ export function App() {
         <Pane side="left" label="Transkript">
           <PaneHead>
             <PaneTitle>Transkript</PaneTitle>
+            {!translation && job && (
+              <span
+                className="mr-auto rounded-[4px] bg-well px-1.5 py-0.5 text-[10.5px] font-semibold tracking-[0.02em] text-fg-3"
+                title={`${LANG_NAMES[sourceLang]} transkript`}
+              >
+                {sourceLang.toUpperCase()}
+              </span>
+            )}
             {translation && (
               <span
                 className="mr-auto -my-1 flex gap-0.5 rounded-md border border-line-soft bg-well p-0.5"
@@ -2136,7 +2144,7 @@ export function App() {
                 title={
                   dragging ? "Bırak, başlayalım" : "Video ya da ses dosyası aç"
                 }
-                text="Türkçe konuşmayı yazıya döker, altyazıyı videonun içine yazar. Her şey bu bilgisayarda, ekran kartında çalışır; dosyan hiçbir yere gönderilmez."
+                text="Konuşmayı yazıya döker, çevirir, seslendirir ve altyazıyı videonun içine yazar. Türkçe ve İngilizce desteklenir. Her şey bu bilgisayarda, ekran kartında çalışır; dosyan hiçbir yere gönderilmez."
                 actions={
                   <>
                     <Button

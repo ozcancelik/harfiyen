@@ -6,13 +6,13 @@
 </p>
 
 <p align="center">
-  <strong>Türkçe konuşmayı tarayıcıda yazıya döker, altyazıyı videonun içine yazar.</strong><br />
+  <strong>Türkçe ve İngilizce konuşmayı tarayıcıda yazıya döker, çevirir, yapay sesle seslendirir ve altyazıyı videonun içine yazar.</strong><br />
   Ses ve video bilgisayarından çıkmaz. 
 </p>
 
 <p align="center">
-  Turkish speech-to-text and styled video captions, right in your browser.<br />
-  Transcribe files or live audio, add punctuation, and export captioned videos — all processed locally.
+  Turkish and English speech-to-text, translation, synthetic-voice dubbing and styled video captions, right in your browser.<br />
+  Transcribe files or live audio, translate, dub, and export captioned videos — all processed locally.
 </p>
 
 <p align="center">
