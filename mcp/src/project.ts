@@ -9,6 +9,7 @@ import { basename, dirname, extname, join } from "node:path";
 import type { DecodingMethod, SpeechLang, Word } from "../../src/engine";
 import { readSpeakers } from "../../src/lib/speakers";
 import type { Translation } from "../../src/lib/translation";
+import { isMtLang, SPEECH_LANGS } from "./lang";
 import { SPEECH_MODELS, type ModelId } from "./models";
 import type { Transcript } from "./transcript";
 
@@ -69,7 +70,7 @@ export function readProject(text: string, file: string, source?: string): Omit<T
 
   const t = d.translation as Record<string, unknown> | undefined;
   const translation: Translation | undefined =
-    (t?.lang === "en" || t?.lang === "tr") && typeof t.source === "string" ? { lang: t.lang, source: t.source, words: readWords(t.words) } : undefined;
+    typeof t?.lang === "string" && isMtLang(t.lang) && typeof t.source === "string" ? { lang: t.lang, source: t.source, words: readWords(t.words) } : undefined;
   const media = d.media as { name?: unknown } | null;
   const beside = media && typeof media.name === "string" ? join(dirname(file), media.name) : undefined;
   const words = readWords(d.words);
@@ -84,7 +85,7 @@ export function readProject(text: string, file: string, source?: string): Omit<T
     model: SPEECH_MODELS[modelId].name,
     modelId,
     method: (d.method as DecodingMethod) ?? undefined,
-    lang: d.lang === "en" ? "en" : "tr",
+    lang: SPEECH_LANGS.some((l) => l.code === d.lang) ? (d.lang as SpeechLang) : "tr",
     words,
     speakers: readSpeakers(d.speakers),
     translation,
@@ -130,7 +131,7 @@ export function writeProject(t: Transcript, wave?: Waveform): string {
     model: t.modelId ?? "seda",
     ...(t.imported && { imported: t.imported }),
     method: t.method ?? "beam-lm",
-    ...(t.lang === "en" && { lang: "en" as SpeechLang }),
+    ...(t.lang !== "tr" && { lang: t.lang }),
     duration: t.duration,
     elapsed: num(app.elapsed),
     ...(num(app.stoppedAt) !== null && { stoppedAt: app.stoppedAt }),

@@ -96,6 +96,9 @@ export function lookOf(app: Record<string, unknown> | undefined): Look {
     if (s.position === "bottom" || s.position === "middle" || s.position === "top") {
       look.captions.position = { bottom: "alt", middle: "orta", top: "ust" }[s.position] as CaptionOptions["position"];
     }
+    if (s.italic === true) look.captions.italic = true;
+    if (num(s.tracking)) look.captions.tracking = s.tracking;
+    if (num(s.weight)) look.chromeOnly.push({ why: "yazı kalınlığı", note: `Projedeki yazı kalınlığı (${s.weight}) Chrome olmadan çizilemedi; ffmpeg yalnızca kalın ya da normal yazar.` });
     if (hex(s.textColor)) look.captions.color = hex(s.textColor);
     if (hex(s.accentColor)) look.captions.accent = hex(s.accentColor);
     // False leaves it to the font: capitals-only fonts need the Turkish upper-casing either way.

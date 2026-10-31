@@ -34,6 +34,10 @@ export interface CaptionOptions {
   font: string;
   /** Bold cut; false for single-weight display fonts (Anton, Bangers...), which libass would smear. */
   bold?: boolean;
+  /** Slanted text (the font's italic cut where libass finds one). */
+  italic?: boolean;
+  /** Space between letters in em (negative: tighter). */
+  tracking?: number;
   /** Turkish capitals (i → İ); missing: on for fonts that only have capitals. */
   uppercase?: boolean;
   /**
@@ -220,7 +224,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${o.font},${px},${primary},${secondary},${outline},${assColor("#000000", 0x80)},${o.bold ? -1 : 0},0,0,0,100,100,0,0,${box ? 3 : 1},${border},${shadow},${align},${Math.round(w * 0.06)},${Math.round(w * 0.06)},${margin},1
+Style: Default,${o.font},${px},${primary},${secondary},${outline},${assColor("#000000", 0x80)},${o.bold ? -1 : 0},${o.italic ? -1 : 0},0,0,100,100,${((o.tracking ?? 0) * px).toFixed(2)},0,${box ? 3 : 1},${border},${shadow},${align},${Math.round(w * 0.06)},${Math.round(w * 0.06)},${margin},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

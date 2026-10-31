@@ -52,6 +52,22 @@ async function loadSpeech(id: ModelId): Promise<SpeechEngine> {
       "cpu",
     );
   }
+  // Mihu is Seda's engine without the language model and the final encoder.
+  if (id === "mihu") {
+    return Engine.create(
+      ort,
+      {
+        config: readJson<ModelConfig>(file("model.json")),
+        encoder: readBytes(file("encoder.webgpu.onnx")),
+        decoder: readBytes(file("decoder.int8.onnx")),
+        joiner: readBytes(file("joiner.int8.onnx")),
+        tokens: readFileSync(file("tokens.txt"), "utf8"),
+        vad: readBytes(file("silero_vad.onnx")),
+      },
+      "cpu",
+      "cpu",
+    );
+  }
   if (id === "duyu") {
     return DuyuEngine.create(
       ort,

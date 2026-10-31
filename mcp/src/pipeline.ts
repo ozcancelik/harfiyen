@@ -15,8 +15,12 @@ import { pcmChunks, probe } from "./audio";
 import { signal } from "./jobs";
 import type { Waveform } from "./project";
 import { formatter, speakerEmbedder, speechEngine, translator } from "./engines";
-import { SPEECH_MODELS, type ModelId, type MtPair } from "./models";
+import { isMtLang, LANG_NAMES } from "./lang";
+import { mtRoute, SPEECH_MODELS, type ModelId } from "./models";
+import { MT_LANGS, type MtLang } from "../../src/engine/languages";
 import type { Transcript } from "./transcript";
+
+const MT_LIST = MT_LANGS.join(", ");
 
 export type Progress = (share: number, message?: string) => void;
 
@@ -48,7 +52,7 @@ export async function recognize(o: TranscribeOptions, progress: Progress): Promi
   const info = await probe(o.file);
   if (!info.hasAudio) throw new Error("Bu dosyada ses kanalı yok.");
   const info_ = SPEECH_MODELS[o.model];
-  if (!info_.langs.includes(o.lang)) throw new Error(`${info_.name} ${o.lang === "en" ? "İngilizce" : "Türkçe"} bilmiyor; Whisper seçilmeli.`);
+  if (!info_.langs.includes(o.lang)) throw new Error(`${info_.name} ${LANG_NAMES[o.lang] ?? o.lang} bilmiyor; Whisper seçilmeli.`);
   const start = o.start ?? 0;
   const end = Math.min(o.end ?? info.duration, info.duration);
   progress(0, `${info_.name} yükleniyor`);
@@ -97,19 +101,29 @@ export async function transcribe(o: TranscribeOptions, progress: Progress) {
   return { words: writeNumbers(words, o.lang === "tr" ? o.numbers : "keep"), duration };
 }
 
-export async function translate(t: Transcript, progress: Progress): Promise<Translation> {
+/** The language a transcript in `from` is translated into unless another is asked for: English, or Turkish for English. */
+export const defaultTarget = (from: string): MtLang => (from === "en" ? "tr" : "en");
+
+export async function translate(t: Transcript, progress: Progress, target?: MtLang): Promise<Translation> {
   if (!t.words.length) throw new Error("Transkript boş.");
-  const pair: MtPair = t.lang === "tr" ? "tr-en" : "en-tr";
+  if (!isMtLang(t.lang)) throw new Error(`Çeviri ${LANG_NAMES[t.lang] ?? t.lang} için yok; dil ${MT_LIST} arasında olmalı.`);
+  const to = target ?? defaultTarget(t.lang);
+  if (to === t.lang) throw new Error("Çeviri dili transkriptin diliyle aynı.");
+  const route = mtRoute(t.lang, to);
   progress(0, "çeviri modeli yükleniyor");
-  const mt = await translator(pair);
+  // One after the other: each model is loaded before the sentences start.
+  const chain = [];
+  for (const pair of route) chain.push(await translator(pair));
   const sentences = splitSentences(t.words);
   const texts: string[] = [];
   for (const [i, s] of sentences.entries()) {
     progress(i / sentences.length, "çevriliyor");
-    texts.push(await mt.translate(s.text));
+    let text = s.text;
+    for (const mt of chain) text = await mt.translate(text);
+    texts.push(text);
   }
   progress(1);
-  return { lang: t.lang === "tr" ? "en" : "tr", words: placeTranslation(t.words, sentences, texts), source: sourceKey(t.words) };
+  return { lang: to, words: placeTranslation(t.words, sentences, texts), source: sourceKey(t.words) };
 }
 
 /** Who speaks when: sets the transcript's speakers from the audio. */

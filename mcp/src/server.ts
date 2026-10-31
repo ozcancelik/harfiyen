@@ -6,6 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import type { Word } from "../../src/engine";
+import type { MtLang } from "../../src/engine/languages";
 import { alignText } from "../../src/lib/align";
 import { buildCues, importedCues, SUBTITLE_RULES } from "../../src/lib/cues";
 import {
@@ -41,6 +42,7 @@ import { download, plan } from "./download";
 import { installed, isReady, SPEECH_MODELS, UNIT_IDS, UNITS } from "./models";
 import { fitVoice, speaker, VOICE_INFO, type Voice, type VoiceLang, type VoiceModel } from "./voices";
 import { METHODS, planCuts, punctuate, tellSpeakers, transcribe, translate, waveformOf } from "./pipeline";
+import { isMtLang, LANG_NAMES, MT_LANGS, SPEECH_CODES } from "./lang";
 import { PROJECT_EXT, readProject, writeProject } from "./project";
 import { probe } from "./audio";
 import * as store from "./transcript";
@@ -147,6 +149,8 @@ function render(t: Transcript, format: "lines" | "text" | "srt" | "vtt" | "json"
 const trimmed = (s: string, max: number) => (s.length > max ? `${s.slice(0, max)}\n… (${s.length - max} karakter daha var; max_chars artırılabilir)` : s);
 
 const Format = z.enum(["lines", "text", "srt", "vtt", "json"]);
+const SPEECH_LANGS_HELP = SPEECH_CODES.map((c) => `${c}: ${LANG_NAMES[c]}`).join(", ");
+const MT_CODES = MT_LANGS as unknown as [string, ...string[]];
 const Language = z.enum(["transcript", "translation"]).default("transcript");
 const Background = z.boolean().optional().describe("true: iş arka planda sürer, job_status ile sorulur");
 
@@ -233,8 +237,8 @@ server.registerTool(
       "Bir ses ya da video dosyasını kelime zamanlı yazıya döker. Seda çıktısına noktalama ve büyük harf eklenir, sayılar yazılır. Whisper CPU'da yavaştır (gerçek zamandan uzun sürebilir). Sonuç bir transkript kimliğidir; diğer araçlar onunla çalışır.",
     inputSchema: {
       file: z.string().describe("Ses ya da video dosyasının yolu"),
-      model: z.enum(["seda", "duyu", "whisper-turbo", "whisper-turbo-q4"]).default("seda"),
-      lang: z.enum(["tr", "en"]).default("tr").describe("Videodaki dil; İngilizceyi yalnızca Whisper bilir"),
+      model: z.enum(["seda", "mihu", "duyu", "whisper-turbo", "whisper-turbo-q4"]).default("seda").describe("seda ve mihu (hızlı, küçük) ile duyu yalnızca Türkçe; Whisper 31 dilde yazıya döker"),
+      lang: z.enum(SPEECH_CODES).default("tr").describe(`Videodaki dil (${SPEECH_LANGS_HELP}); Türkçe dışındakini yalnızca Whisper bilir`),
       accuracy: z.enum(["fast", "balanced", "best"]).default("best").describe("Yalnızca Seda: Hızlı, Dengeli, En doğru"),
       start: z.number().min(0).optional().describe("Başlangıç, saniye"),
       end: z.number().min(0).optional().describe("Bitiş, saniye"),
@@ -272,7 +276,7 @@ server.registerTool(
     inputSchema: {
       path: z.string(),
       source: z.string().optional().describe("Altyazının ait olduğu video ya da ses dosyası"),
-      lang: z.enum(["tr", "en"]).default("tr"),
+      lang: z.enum(SPEECH_CODES).default("tr"),
     },
   },
   async (a) => {
@@ -768,14 +772,15 @@ server.registerTool(
   "translate",
   {
     title: "Çevir",
-    description: "Türkçe transkripti İngilizceye, İngilizceyi Türkçeye cümle cümle çevirir; her cümle aslının zamanında kalır.",
-    inputSchema: { id: z.string(), background: Background },
+    description:
+      "Transkripti cümle cümle çevirir; her cümle aslının zamanında kalır. Diller: tr, en, de, fr, es, ru. Hedef verilmezse İngilizceye (İngilizce transkript Türkçeye) çevrilir. İngilizce olmayan çiftler (örn. Almanca → Türkçe) İngilizce üzerinden iki adımda çevrilir, bu yüzden daha yavaş ve biraz daha az doğrudur.",
+    inputSchema: { id: z.string(), target: z.enum(MT_CODES).optional().describe("Hedef dil (tr, en, de, fr, es, ru); verilmezse İngilizce, İngilizce transkriptte Türkçe"), background: Background },
   },
   (a, extra) =>
     heavy("translate", extra as unknown as Extra, a.background, async (report) => {
       const t = store.load(a.id);
       store.checkpoint(t, "translate");
-      t.translation = await translate(t, report);
+      t.translation = await translate(t, report, a.target as MtLang | undefined);
       store.save(t);
       return `Çeviri hazır (${t.translation.lang}).\n${render(t, "lines", "translation").slice(0, 3000)}`;
     }),
@@ -868,7 +873,7 @@ server.registerTool(
   {
     title: "Altyazılı video",
     description:
-      "Altyazıyı videoya yazar. cut_words ile kesilen kelimeler, kısaltılan boşluklar veya mode='keep_only' ile seçilen çoklu önemli bölümler tek bir render geçişinde (single-pass, ses crossfade ile) birleştirilip yazılır. Transkript web uygulamasının .harfiyen projesinden geldiyse (import_project) projenin altyazı stili, yazı tipi, renkleri, boyutu, kadrajı (kırpma kutusu ya da sığdırma, bulanık zemin) ve boşluk kesme ayarı varsayılan olarak kullanılır; verilen parametreler bunun üstüne yazar, use_project=false projeyi yok sayar. Stiller: klasik (koyu kutu), sade (gölgeli), karaoke (söylenen kelime renkle dolar), akis (kelimeler söylendikçe yerinde belirir), odak (bulanıktan netleşir), vurgu (söylenen kelime renkli işaretleyici), pop (ortada 3 iri zıplayan kelime), netles (ortada tek iri kelime bulanıktan netleşir), tek-kelime (ortada tek iri kelime). Video varsayılan olarak uygulamanın kendi çizim koduyla, kurulu Chrome'da yazılır: cam stili, aura, kinetik tipografi, bulanık görüntü, arka plan fotoğrafı ve logo (preset=cam, text_background=glass, kinetic, picture=aura/blur, aura, aura_style, photo_file, logo_file) yalnızca böyle çizilir. Chrome yoksa ffmpeg kullanılır ve cevapta not düşülür (yalnızca Chrome'da olanlar istendiyse hata verilir). Chrome yolunda size uygulamanın boyudur (kısa kenarın payı), bold yoktur.",
+      "Altyazıyı videoya yazar. cut_words ile kesilen kelimeler, kısaltılan boşluklar veya mode='keep_only' ile seçilen çoklu önemli bölümler tek bir render geçişinde (single-pass, ses crossfade ile) birleştirilip yazılır. Transkript web uygulamasının .harfiyen projesinden geldiyse (import_project) projenin altyazı stili, yazı tipi, renkleri, boyutu, kadrajı (kırpma kutusu ya da sığdırma, bulanık zemin) ve boşluk kesme ayarı varsayılan olarak kullanılır; verilen parametreler bunun üstüne yazar, use_project=false projeyi yok sayar. Stiller: klasik (koyu kutu), sade (gölgeli), karaoke (söylenen kelime renkle dolar), akis (kelimeler söylendikçe yerinde belirir), odak (bulanıktan netleşir), vurgu (söylenen kelime renkli işaretleyici), pop (ortada 3 iri zıplayan kelime), netles (ortada tek iri kelime bulanıktan netleşir), tek-kelime (ortada tek iri kelime). Video varsayılan olarak uygulamanın kendi çizim koduyla, kurulu Chrome'da yazılır: cam stili, aura, kinetik tipografi, bulanık görüntü, arka plan fotoğrafı ve logo (preset=cam, text_background=glass, kinetic, picture=aura/blur, aura, aura_style, photo_file, logo_file) yalnızca böyle çizilir. Chrome yoksa ffmpeg kullanılır ve cevapta not düşülür (yalnızca Chrome'da olanlar istendiyse hata verilir). Chrome yolunda size uygulamanın boyudur (kısa kenarın payı), bold yoktur; kalınlık için weight, eğiklik için italic, harf aralığı için tracking kullanılır.",
     inputSchema: {
       id: z.string(),
       output: z.string().describe("Yazılacak .mp4 dosyasının yolu"),
@@ -900,6 +905,9 @@ server.registerTool(
         .describe(`Paketli yazı tiplerinden biri (${BUNDLED.map((f) => f.family).join(", ")}) ya da sistemde kurulu bir yazı tipi adı`),
       font_file: z.string().optional().describe("Kendi yazı tipin (TTF ya da OTF; Chrome yolunda WOFF ve WOFF2 de olur); verilirse font yerine bu kullanılır"),
       bold: z.boolean().optional().describe("Kalın; verilmezse yazı tipine göre (Anton, Bangers gibi tek kalınlıklılarda kapalı)"),
+      weight: z.number().int().min(100).max(900).optional().describe("Yazı kalınlığı, 100–900 (Chrome yolunda; yalnızca değişken yazı tipleri: Inter, Montserrat, Schibsted Grotesk, Literata, Google Sans Flex; tek kalınlıklı yazı tipleri kendi kalınlığında kalır)"),
+      italic: z.boolean().optional().describe("İtalik: yazı tipinin italik kesimi varsa o, yoksa yazı eğilir (Chrome yolunda; ffmpeg yolunda eğik yazı)"),
+      tracking: z.number().min(-0.1).max(0.5).optional().describe("Harf aralığı, em cinsinden (eksi: daha sık; 0,05 hafif açık). Hem Chrome hem ffmpeg yolunda"),
       uppercase: z.boolean().optional().describe("Türkçe kurala uygun büyük harf (i → İ); verilmezse yazı tipine göre (Luckiest Guy, Bangers, Bebas Neue yalnızca büyük harf bildiği için açık)"),
       size: z.number().min(0.02).max(0.15).optional().describe("Yazı boyu, kare yüksekliğinin payı; büyük stiller (pop, tek-kelime, netles) bunu ayrıca büyütür. Chrome yolunda uygulamanın boyudur: kısa kenarın payı, stilin kendi boyu hazır"),
       position: z.enum(["alt", "orta", "ust"]).optional().describe("Verilmezse stile göre: tek kelimelik stiller ortada, diğerleri altta"),
@@ -950,6 +958,8 @@ server.registerTool(
           style: a.style ?? look.style ?? DEFAULT_CAPTIONS.style,
           font: a.font ?? look.captions.font ?? DEFAULT_CAPTIONS.font,
           bold: a.bold,
+          italic: a.italic ?? look.captions.italic,
+          tracking: a.tracking ?? look.captions.tracking,
           uppercase: a.uppercase ?? look.captions.uppercase,
           ...size,
           position: a.position ?? fromProject.position,
@@ -1013,6 +1023,7 @@ server.registerTool(
       if (!a.photo_file && a.photo_blur !== undefined) {
         early.push("photo_blur için photo_file da verilmeli.");
       }
+      if (!chrome && a.weight !== undefined) early.push("weight yalnızca Chrome yolunda var; ffmpeg yolunda yalnızca bold açık ya da kapalıdır.");
       const family = a.font_file ? undefined : (a.font ?? undefined);
       const fontId = family ? fontIdOf(family) : undefined;
       const preset = a.preset ?? (a.style ? STYLE_PRESET[a.style] : look.settings ? undefined : "sade");
@@ -1026,6 +1037,9 @@ server.registerTool(
         ...(a.position && { position: { alt: "bottom", orta: "middle", ust: "top" }[a.position] }),
         ...(a.color && { textColor: a.color }),
         ...(a.accent && { accentColor: a.accent }),
+        ...(a.weight !== undefined && { weight: a.weight }),
+        ...(a.italic !== undefined && { italic: a.italic }),
+        ...(a.tracking !== undefined && { tracking: a.tracking }),
         ...(a.uppercase !== undefined && { uppercase: a.uppercase }),
         ...(a.text_background && { background: a.text_background }),
         ...(a.speaker_names !== undefined && { speakerNames: a.speaker_names }),
@@ -1086,7 +1100,7 @@ server.registerTool(
             : undefined,
           photo: a.photo_file ? { file: abs(a.photo_file), blur: a.photo_blur ?? look.photoBlur } : undefined,
         };
-        if (a.bold !== undefined) early.push("bold Chrome yolunda yok; kalınlığı uygulama yazı tipine göre kendisi seçer.");
+        if (a.bold !== undefined) early.push("bold Chrome yolunda yok; kalınlık için weight (100–900) kullanılır.");
         const done = await renderChrome(t, opts, c, report);
         r = done;
         drawnBy = `\nUygulamanın kendi çizimiyle yazıldı (Chrome, ${done.gpu}).`;
@@ -1303,7 +1317,7 @@ server.registerTool(
 );
 
 const VoiceShape = {
-  voice: z.enum(["ema", "mini", "ahenk", "supertonic"]).default("ema").describe("Ses modeli: ema (EMA Lightning, varsayılan), mini (Antalia Mini), ahenk (Ahenk Cep: rakamları en iyi okuyan, biraz yavaş), supertonic (Türkçe ve İngilizce, 10 ses). İngilizce okuma her zaman Supertonic'tir."),
+  voice: z.enum(["ema", "mini", "ahenk", "supertonic"]).default("ema").describe("Ses modeli: ema (EMA Lightning, varsayılan), mini (Antalia Mini), ahenk (Ahenk Cep: rakamları en iyi okuyan, biraz yavaş), supertonic (tr, en, de, fr, es, ru; 10 ses). Türkçe dışındaki diller her zaman Supertonic'tir."),
   style: z.enum(["M1", "M2", "M3", "M4", "M5", "F1", "F2", "F3", "F4", "F5"]).default("M3").describe("Yalnızca Supertonic'in sesi: M erkek, F kadın"),
   pitch: z.number().min(-4).max(4).default(0).describe("Ses tonu, yarım ton adımlarla; negatif daha kalın. Supertonic'te yok"),
   seed: z.number().int().min(0).default(0).describe("Aynı sesi farklı bir vurguyla okutur"),
@@ -1347,10 +1361,20 @@ function speakerVoicesOf(
 }
 
 /** The voice a tool asked for, moved to Supertonic where the language needs it. */
-function voiceOf(a: { voice: VoiceModel; style: string; pitch: number; seed: number }, lang: VoiceLang) {
+const SAMPLE: Record<VoiceLang, string> = {
+  tr: "Merhaba, seslendirme bu sesle yapılacak.",
+  en: "Hello, the dub will be read in this voice.",
+  de: "Hallo, die Synchronisation wird mit dieser Stimme gesprochen.",
+  fr: "Bonjour, le doublage sera lu avec cette voix.",
+  es: "Hola, el doblaje se leerá con esta voz.",
+  ru: "Здравствуйте, дубляж будет озвучен этим голосом.",
+};
+
+function voiceOf(a: { voice: VoiceModel; style: string; pitch: number; seed: number }, lang: string) {
+  if (!isMtLang(lang)) throw new Error(`Seslendirme ${LANG_NAMES[lang] ?? lang} için yok; okunabilen diller: tr, en, de, fr, es, ru.`);
   const asked: Voice = { lang, model: a.voice, style: a.style, pitch: a.pitch, seed: a.seed };
   const voice = fitVoice(asked);
-  const note = voice.model !== asked.model ? `\nNot: ${lang === "en" ? "İngilizceyi" : "Bu dili"} yalnızca Supertonic okur; ses Supertonic'e çevrildi.` : "";
+  const note = voice.model !== asked.model ? `\nNot: ${lang === "tr" ? "Bu sesi" : `${LANG_NAMES[lang]} dilini`} yalnızca Supertonic okur; ses Supertonic'e çevrildi.` : "";
   return { voice, note };
 }
 
@@ -1359,7 +1383,7 @@ server.registerTool(
   {
     title: "Seslendir",
     description:
-      "Transkripti (ya da çevirisini) yapay bir sesle okuyup her satırı kendi zamanında yerleştirir. Yerine sığmayan satır 1,35 kata kadar hızlı okunur, taşan son satırlar öncekilerin sessizliğine kayar. Sonuç kaydedilir: render_captions seslendirmeyi videoya karıştırır, altyazıyı sesin zamanına uydurur; export_dub WAV olarak verir. Türkçe videoya İngilizce voice-over için önce translate, sonra language=translation. Supertonic dışındaki sesler hızlıdır; Supertonic gerçek zamanın birkaç katı hızında çalışır.",
+      "Transkripti (ya da çevirisini) yapay bir sesle okuyup her satırı kendi zamanında yerleştirir. Yerine sığmayan satır 1,35 kata kadar hızlı okunur, taşan son satırlar öncekilerin sessizliğine kayar. Sonuç kaydedilir: render_captions seslendirmeyi videoya karıştırır, altyazıyı sesin zamanına uydurur; export_dub WAV olarak verir. Videoya başka dilde voice-over için (tr, en, de, fr, es, ru) önce translate, sonra language=translation; Türkçe dışındaki diller Supertonic ile okunur. Supertonic dışındaki sesler hızlıdır; Supertonic gerçek zamanın birkaç katı hızında çalışır.",
     inputSchema: { id: z.string(), language: Language, ...VoiceShape, speaker_voices: SpeakerVoices, background: Background },
   },
   (a, extra) =>
@@ -1376,7 +1400,7 @@ server.registerTool(
       if (!lines.length) throw new Error("Seçili bölümde okunacak metin yok.");
       const keyWords = t.range ? words.filter((w) => w.end > t.range!.start && w.start < t.range!.end) : words;
       // A line is read by whoever says its first word.
-      const per = speakerVoicesOf(a.speaker_voices, t, voice, lang);
+      const per = speakerVoicesOf(a.speaker_voices, t, voice, voice.lang);
       const who = per.size ? labelWords(words, t.speakers) : words;
       const voiceAt = (i: number) => per.get(who[lines[i].first]?.speaker ?? -1)?.voice ?? voice;
       const start = t.range?.start ?? 0;
@@ -1432,15 +1456,15 @@ server.registerTool(
     inputSchema: {
       output: z.string().describe("Yazılacak .wav dosyasının yolu"),
       text: z.string().optional(),
-      lang: z.enum(["tr", "en"]).default("tr"),
+      lang: z.enum(MT_CODES).default("tr").describe("Okunacak dil: tr, en, de, fr, es, ru"),
       ...VoiceShape,
       background: Background,
     },
   },
   (a, extra) =>
     heavy("preview_voice", extra as unknown as Extra, a.background, async (report) => {
-      const { voice, note } = voiceOf(a, a.lang);
-      const sample = a.text?.trim() || (a.lang === "en" ? "Hello, the dub will be read in this voice." : "Merhaba, seslendirme bu sesle yapılacak.");
+      const { voice, note } = voiceOf(a, a.lang as VoiceLang);
+      const sample = a.text?.trim() || SAMPLE[a.lang as VoiceLang];
       report(0, "ses yükleniyor");
       const audio = await speak(await speaker(voice.model), sample, voice);
       const out = abs(a.output);
@@ -1457,7 +1481,7 @@ server.registerTool(
       "Dosya olmadan, yazılan ya da yapıştırılan metni yapay sesle okur. Her cümle ya da satır ayrı okunur; kelimeler sesin zamanıyla bir transkripte yerleşir (ses WAV dosyası o transkriptin medyası olur). Çıkan transkriptle render_captions koyu zeminli, seslendirmeli altyazılı bir video yapar. output verilirse WAV ayrıca oraya yazılır.",
     inputSchema: {
       text: z.string().min(1),
-      lang: z.enum(["tr", "en"]).default("tr"),
+      lang: z.enum(MT_CODES).default("tr").describe("Okunacak dil: tr, en, de, fr, es, ru"),
       name: z.string().optional(),
       output: z.string().optional().describe("WAV'ın ayrıca yazılacağı yol"),
       ...VoiceShape,
@@ -1466,7 +1490,7 @@ server.registerTool(
   },
   (a, extra) =>
     heavy("speak_text", extra as unknown as Extra, a.background, async (report) => {
-      const { voice, note } = voiceOf(a, a.lang);
+      const { voice, note } = voiceOf(a, a.lang as VoiceLang);
       const words = wordsFromText(a.text);
       if (!words.length) throw new Error("Okunacak metin yok.");
       const lines = dubLines(words, dubBySentence(a.lang, a.lang));
@@ -1475,7 +1499,7 @@ server.registerTool(
       const timed = timeToDub(words, lines, clips.map((c) => ({ line: c.line, start: c.start, seconds: c.audio.length / 48000 })));
       const last = clips.at(-1);
       const duration = last ? last.start + last.audio.length / 48000 : 0;
-      const t = store.create({ name: a.name ?? a.text.trim().slice(0, 40), duration, lang: a.lang, words: timed, model: VOICE_INFO[voice.model].name });
+      const t = store.create({ name: a.name ?? a.text.trim().slice(0, 40), duration, lang: a.lang as VoiceLang, words: timed, model: VOICE_INFO[voice.model].name });
       const wav = join(dirname(dubWavPath(t.id)), `${t.id}.speech.wav`);
       writeDubWav(wav, clips, duration);
       t.source = wav;

@@ -3,6 +3,7 @@
 
 import { join } from "node:path";
 import * as ortNode from "onnxruntime-node";
+import type { MtLang } from "../../src/engine/languages";
 import type { Ort } from "../../src/engine/models";
 import { Ahenk, type AhenkManifest } from "../../src/tts/ahenk";
 import { createFrontend, decodeAsset, type Frontend } from "../../src/tts/antalia-mini/frontend";
@@ -15,9 +16,9 @@ const ort = ortNode as unknown as Ort;
 
 export { RATE };
 
-/** The text-to-speech models; Supertonic is the only one that reads English. */
+/** The text-to-speech models; Supertonic is the only one that reads a language other than Turkish. */
 export type VoiceModel = "ema" | "mini" | "ahenk" | "supertonic";
-export type VoiceLang = "tr" | "en";
+export type VoiceLang = MtLang;
 
 export interface Voice {
   lang: VoiceLang;
@@ -34,7 +35,7 @@ export const VOICE_INFO: Record<VoiceModel, { dir: string; name: string; langs: 
   ema: { dir: "ema-lightning", name: "EMA Lightning", langs: ["tr"], note: "Türkçe, varsayılan ses" },
   mini: { dir: "antalia-mini", name: "Antalia Mini", langs: ["tr"], note: "Türkçe, küçük model" },
   ahenk: { dir: "ahenk-cep", name: "Ahenk Cep", langs: ["tr"], note: "Türkçe; rakamları, tarihleri ve kısaltmaları en iyi okuyan, biraz yavaş" },
-  supertonic: { dir: "supertonic-3", name: "Supertonic 3", langs: ["tr", "en"], note: "Türkçe ve İngilizce; 10 ses (M1–M5, F1–F5)" },
+  supertonic: { dir: "supertonic-3", name: "Supertonic 3", langs: ["tr", "en", "de", "fr", "es", "ru"], note: "Türkçe, İngilizce, Almanca, Fransızca, İspanyolca, Rusça; 10 ses (M1–M5, F1–F5)" },
 };
 
 /** The raw model: text to audio at `rate`, `speed` above 1 reading faster. */
@@ -112,7 +113,7 @@ export function speaker(model: VoiceModel): Promise<Speaker> {
   return p;
 }
 
-/** Only Supertonic reads English; a voice for a language its model does not know is moved to Supertonic. */
+/** Only Supertonic reads a language other than Turkish; a voice for a language its model does not know is moved to Supertonic. */
 export function fitVoice(v: Voice): Voice {
-  return v.lang === "en" ? { ...v, model: "supertonic" } : v;
+  return v.lang !== "tr" ? { ...v, model: "supertonic" } : v;
 }

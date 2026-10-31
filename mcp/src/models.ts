@@ -7,19 +7,33 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type ModelId = "seda" | "duyu" | "whisper-turbo" | "whisper-turbo-q4";
-export type MtPair = "tr-en" | "en-tr";
+import { MT_LANGS, SPEECH_LANGS, type MtLang, type SpeechLang } from "../../src/engine/languages";
 
-export const SPEECH_MODELS: Record<ModelId, { dir: string; name: string; langs: ("tr" | "en")[]; punctuates: boolean }> = {
+export type ModelId = "seda" | "mihu" | "duyu" | "whisper-turbo" | "whisper-turbo-q4";
+/** A translation model's direction; each has English at one end (the Turkish pair is the larger "tc-big"). */
+export type MtPair = `${MtLang}-${MtLang}`;
+
+const ALL_LANGS: SpeechLang[] = SPEECH_LANGS.map((l) => l.code);
+
+export const SPEECH_MODELS: Record<ModelId, { dir: string; name: string; langs: SpeechLang[]; punctuates: boolean }> = {
   seda: { dir: "seda-v0.2", name: "Seda", langs: ["tr"], punctuates: false },
+  mihu: { dir: "turkish-stt-66m-v2", name: "Mihu", langs: ["tr"], punctuates: false },
   duyu: { dir: "duyu-small", name: "Duyu", langs: ["tr"], punctuates: true },
-  "whisper-turbo": { dir: "whisper-large-v3-turbo", name: "Whisper Turbo", langs: ["tr", "en"], punctuates: true },
-  "whisper-turbo-q4": { dir: "whisper-large-v3-turbo", name: "Whisper Turbo", langs: ["tr", "en"], punctuates: true },
+  "whisper-turbo": { dir: "whisper-large-v3-turbo", name: "Whisper Turbo", langs: ALL_LANGS, punctuates: true },
+  "whisper-turbo-q4": { dir: "whisper-large-v3-turbo", name: "Whisper Turbo", langs: ALL_LANGS, punctuates: true },
 };
 
 export const PUNCT_DIR = "seda-formatter";
 export const SPEAKER_DIR = "3dspeaker-campplus";
-export const MT_DIRS: Record<MtPair, string> = { "tr-en": "opus-mt-tc-big-tr-en", "en-tr": "opus-mt-tc-big-en-tr" };
+export const MT_PAIRS: MtPair[] = MT_LANGS.flatMap((l) => (l === "en" ? [] : ([`${l}-en`, `en-${l}`] as MtPair[])));
+export const mtDir = (pair: MtPair) => (pair === "tr-en" ? "opus-mt-tc-big-tr-en" : pair === "en-tr" ? "opus-mt-tc-big-en-tr" : `opus-mt-${pair}`);
+
+/** The models a translation runs through, in order: one when English is at either end, else via English. */
+export function mtRoute(from: MtLang, to: MtLang): MtPair[] {
+  if (from === to) return [];
+  if (from === "en" || to === "en") return [`${from}-${to}` as MtPair];
+  return [`${from}-en` as MtPair, `en-${to}` as MtPair];
+}
 
 /** One downloadable piece: a model folder, or the part of one a single variant reads. */
 export interface Unit {
@@ -55,15 +69,34 @@ export const UNITS: Record<string, Unit> = {
     files: ["encoder_model_q4f16.onnx", ...WHISPER],
     mb: 570,
   },
+  mihu: {
+    id: "mihu",
+    name: "Mihu (Türkçe yazıya döküm)",
+    dir: "turkish-stt-66m-v2",
+    probe: "model.json",
+    files: ["encoder.webgpu.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt", "silero_vad.onnx"],
+    mb: 67,
+  },
   punct: { id: "punct", name: "Noktalama ve büyük harf", dir: PUNCT_DIR, probe: "model.json", mb: 31 },
   speakers: { id: "speakers", name: "Konuşmacı ayırma", dir: SPEAKER_DIR, probe: "model.json", files: ["campplus.onnx"], mb: 29 },
-  "translate-tr-en": { id: "translate-tr-en", name: "Çeviri Türkçe → İngilizce", dir: MT_DIRS["tr-en"], probe: "model.json", mb: 357 },
-  "translate-en-tr": { id: "translate-en-tr", name: "Çeviri İngilizce → Türkçe", dir: MT_DIRS["en-tr"], probe: "model.json", mb: 357 },
   "voice-ema": { id: "voice-ema", name: "Seslendirme: EMA Lightning", dir: "ema-lightning", probe: "model.json", mb: 37 },
   "voice-mini": { id: "voice-mini", name: "Seslendirme: Antalia Mini", dir: "antalia-mini", probe: "model.json", mb: 24 },
   "voice-ahenk": { id: "voice-ahenk", name: "Seslendirme: Ahenk Cep", dir: "ahenk-cep", probe: "model.json", mb: 18 },
   "voice-supertonic": { id: "voice-supertonic", name: "Seslendirme: Supertonic 3", dir: "supertonic-3", probe: "model.json", mb: 203 },
 };
+
+const MT_MB: Record<string, number> = { "tr-en": 357, "en-tr": 357, "de-en": 131, "en-de": 131, "fr-en": 133, "en-fr": 133, "es-en": 141, "en-es": 141, "ru-en": 138, "en-ru": 138 };
+const MT_NAMES = Object.fromEntries(SPEECH_LANGS.map((l) => [l.code, l.name])) as Record<string, string>;
+for (const pair of MT_PAIRS) {
+  const [from, to] = pair.split("-");
+  UNITS[`translate-${pair}`] = {
+    id: `translate-${pair}`,
+    name: `Çeviri ${MT_NAMES[from]} → ${MT_NAMES[to]}`,
+    dir: mtDir(pair),
+    probe: "model.json",
+    mb: MT_MB[pair],
+  };
+}
 
 export const UNIT_IDS = Object.keys(UNITS) as [string, ...string[]];
 
@@ -130,7 +163,7 @@ export function installed() {
     speech: Object.fromEntries((Object.keys(SPEECH_MODELS) as ModelId[]).map((id) => [id, ready(id)])),
     punctuation: ready("punct"),
     speakers: ready("speakers"),
-    translation: Object.fromEntries((Object.keys(MT_DIRS) as MtPair[]).map((p) => [p, ready(`translate-${p}`)])),
+    translation: Object.fromEntries(MT_PAIRS.map((p) => [p, ready(`translate-${p}`)])),
     /** What can be downloaded, with sizes; download_models fetches it after the user agrees. */
     missing: Object.values(UNITS)
       .filter((u) => !isReady(u.id))

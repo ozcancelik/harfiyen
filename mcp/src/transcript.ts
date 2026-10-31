@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { DecodingMethod, SpeechLang, Word } from "../../src/engine";
 import type { Speakers } from "../../src/lib/speakers";
+import type { ModelId } from "./models";
 import type { Translation } from "../../src/lib/translation";
 
 export interface Transcript {
@@ -18,7 +19,7 @@ export interface Transcript {
   duration: number;
   model?: string;
   /** The app's id for the model, for the project file. */
-  modelId?: "seda" | "duyu" | "whisper-turbo" | "whisper-turbo-q4";
+  modelId?: ModelId;
   method?: DecodingMethod;
   /** Made from this subtitle file, not transcribed. */
   imported?: string;

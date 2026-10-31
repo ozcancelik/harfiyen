@@ -183,11 +183,11 @@ export async function placeLines(
 }
 
 /**
- * Read a sentence at a time: a translation (into either language), and English. A translated sentence keeps its
+ * Read a sentence at a time: a translation, and any language but Turkish. A translated sentence keeps its
  * source's start, but its words are not timed, so caption lines would cut it at made-up places; read whole, it
  * also sounds like one sentence. A Turkish transcript is read a caption line at a time.
  */
-export const dubBySentence = (voiceLang: "tr" | "en", transcriptLang: "tr" | "en") => voiceLang !== transcriptLang || voiceLang === "en";
+export const dubBySentence = (voiceLang: string, transcriptLang: string) => voiceLang !== transcriptLang || voiceLang !== "tr";
 
 /** What the dub reads: `words` a sentence or a caption line at a time (dubBySentence). */
 export function dubLines(words: Word[], bySentence: boolean): SpokenLine[] {

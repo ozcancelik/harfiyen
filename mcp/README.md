@@ -32,7 +32,7 @@ claude mcp add harfiyen -- node --import tsx /yol/harfiyen/mcp/src/server.ts
 | Araç | Ne yapar |
 | --- | --- |
 | `status` | Diskteki modeller, ffmpeg, kayıtlı transkript sayısı |
-| `transcribe` | Ses ya da videoyu kelime zamanlı yazıya döker (Seda, Duyu, Whisper), noktalama ve sayı yazımıyla |
+| `transcribe` | Ses ya da videoyu kelime zamanlı yazıya döker (Seda, Mihu, Duyu, Whisper), noktalama ve sayı yazımıyla; Whisper 31 dilde (`lang`), Seda, Mihu ve Duyu yalnızca Türkçe |
 | `import_subtitles` | SRT / VTT'yi transkript olarak açar |
 | `import_project`, `export_project`, `set_source` | Web uygulamasının `.harfiyen` projesini açar ve yazar; medya dosyası yeniden bağlanır |
 | `set_range` | Transkriptte kesit (bölüm) seçer ya da kaldırır (saniye ya da kelime sırasıyla); yeniden yazıya döküm yapmadan yalnızca o kesiti dışa aktarır, seslendirir ve videoya yazar |
@@ -47,7 +47,7 @@ claude mcp add harfiyen -- node --import tsx /yol/harfiyen/mcp/src/server.ts
 | `dub`, `export_dub`, `speak_text`, `preview_voice` | Seslendirme: transkripti yapay sesle okuyup satırları kendi zamanına yerleştirme, WAV'a yazma, dosyasız metin seslendirme, ses önizleme |
 | `undo`, `history` | Son 20 düzenlemeyi geri alma; kelimeler, zamanlar, çeviri ve konuşmacılar birlikte döner |
 | `align_text` | Doğru metni (şarkı sözü, konuşma metni) dökümün zamanlarına hizalar |
-| `translate` | TR ↔ EN, cümle cümle |
+| `translate` | tr, en, de, fr, es, ru arasında cümle cümle (`target`); İngilizce olmayan çiftler İngilizce üzerinden iki adımda |
 | `tell_speakers`, `rename_speaker` | Kim ne zaman konuşuyor; adlar SRT, VTT ve videoda görünür |
 | `plan_jump_cut` | Kesilecek sessizlikleri ve dolgu seslerini listeler |
 | `render_captions` | Altyazıyı videoya yazar: stil, yazı tipi, sesle vurgula, jump cut, 9:16 / 4:5 / 1:1 / 16:9 kadraj (`crop_position: orta/sol/sag/ust/alt`), seslendirme karıştırma ve seçilen görünümü `.harfiyen` projesine kaydetme (`save_to_project`) |
@@ -57,7 +57,7 @@ Uzun işler tek tek, sırayla çalışır (modeller belleği paylaşır) ve iler
 
 ## Sınırlar
 
-- Her şey işlemcide çalışır. Seda ve Duyu hızlıdır; Whisper Turbo gerçek zamandan uzun sürebilir.
+- Her şey işlemcide çalışır. Seda, Mihu ve Duyu hızlıdır; Whisper Turbo gerçek zamandan uzun sürebilir.
 - Altyazı stilleri web uygulamasındakinin yakın bir taklididir, birebir aynı görünmez.
 - Canlı mikrofon yok.
 
@@ -77,7 +77,7 @@ belleğe değil tarayıcının özel diskine (OPFS) akıtılır, uzun videolar b
 belleğe alınır (saatlik bir videoda yaklaşık 1 GB). İlk kullanımda `../src` ve `render-host/` Vite ile derlenip
 `~/.harfiyen-mcp/render-host` altına konur (birkaç saniye); kod değişince kendiliğinden yeniden derlenir. Chrome'un yolu
 `CHROME` ile verilebilir. Şimdilik yalnızca macOS'ta denendi. Chrome yolunda `size` uygulamanın boyudur (kısa kenarın
-payı), `bold` yoktur (uygulama kalınlığı yazı tipine göre kendisi seçer). Google Chrome H.264 kodlayıcısını içerir; bazı Chromium sürümleri içermez.
+payı), `bold` yoktur: kalınlık için `weight` (100–900, yalnızca değişken yazı tiplerinde), eğiklik için `italic`, harf aralığı için `tracking` (em) kullanılır. ffmpeg yolunda `italic` ve `tracking` çalışır, `weight` yalnızca kalın/normal olur. Google Chrome H.264 kodlayıcısını içerir; bazı Chromium sürümleri içermez.
 
 ## Altyazı stilleri ve yazı tipleri
 
@@ -120,12 +120,12 @@ Style değiştirirsen projenin o stile ait boyutu, konumu ve zemini kullanılmaz
 ## Seslendirme
 
 Web uygulamasının dört sesi CPU'da çalışır: EMA Lightning (varsayılan), Antalia Mini, Ahenk Cep ve Supertonic 3
-(Türkçe ve İngilizce, 10 ses). Hızları yaklaşık olarak gerçek zamanın EMA'da 29, Antalia'da 25, Ahenk'te 16, Supertonic'te
-5 katıdır. İngilizce okuma her zaman Supertonic'tir.
+(Türkçe, İngilizce, Almanca, Fransızca, İspanyolca ve Rusça; 10 ses). Hızları yaklaşık olarak gerçek zamanın EMA'da 29, Antalia'da 25, Ahenk'te 16, Supertonic'te
+5 katıdır. Türkçe dışındaki diller her zaman Supertonic'tir.
 
 - `dub`: transkripti ya da çevirisini (`language: translation`) okur. Her satır kendi zamanında başlar; yerine sığmayan
   satır en fazla 1,35 kat (Supertonic'te 1,15) hızlı okunur, taşan son satırlar öncekilerin sessizliğine kayar, hâlâ
-  sığmayan için uyarı verilir. Türkçe videoya İngilizce voice-over: `translate`, sonra `dub` ile `language: translation`.
+  sığmayan için uyarı verilir. Başka dilde voice-over (tr, en, de, fr, es, ru): `translate` (`target`), sonra `dub` ile `language: translation`.
 - `speaker_voices` (`dub`): konuşmacıları `tell_speakers` ile ayırdıktan sonra her birine ayrı ses verilir, örneğin
   `[{ speaker: "Konuşmacı 1", style: "M3" }, { speaker: "2", style: "F1" }]`. Konuşmacı adıyla ya da numarasıyla (1'den)
   seçilir; verilmeyen alan genel ses ayarından gelir, listede olmayan konuşmacı genel sesle okunur. Bir satırı, ilk

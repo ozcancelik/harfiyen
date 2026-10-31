@@ -201,7 +201,7 @@ export async function renderChrome(
     logo: c.logo ? { corner: c.logo.corner, size: c.logo.size, opacity: c.logo.opacity } : undefined,
     photo: !!c.photo,
     kinetic: jobKinetic as BurnJob["kinetic"],
-    lang: o.language === "translation" ? (t.lang === "tr" ? "en" : "tr") : t.lang,
+    lang: o.language === "translation" ? t.translation!.lang : t.lang,
     speakers: names,
     dub: dub ? { original: Math.min(0.5, Math.max(0, o.original ?? 0)) } : undefined,
     bands: wantBands,
