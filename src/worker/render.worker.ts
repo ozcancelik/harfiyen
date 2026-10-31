@@ -285,7 +285,7 @@ async function burn(
 ) {
   const started = performance.now();
   // The 2D canvas in a worker only sees fonts registered on the worker.
-  await loadCaptionFont(settings.font, self.fonts);
+  await loadCaptionFont(settings.font, self.fonts, settings.italic);
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
   // A video used for its sound is drawn as an audio file is.

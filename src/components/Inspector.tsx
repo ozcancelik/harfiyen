@@ -3,12 +3,14 @@ import type { CaptionSettings } from "../captions/style";
 import type { JumpCut } from "../lib/cuts";
 import type { GroundPreview } from "../lib/groundPreview";
 import type { DecodingMethod, SpeechLang } from "../engine";
-import { LANG_NAMES } from "../lib/lang";
+import { hasTranslation, LANG_NAMES } from "../lib/lang";
 import { writeNumbers, type NumberMode } from "../lib/numbers";
 import type { DubState, PreviewState, Voice } from "../lib/useDubber";
 import type { EngineState, Job } from "../lib/useTranscriber";
-import { translateProgress, translationLang as targetOf, type TranslateState } from "../lib/useTranslator";
-import { modelInfo, type ModelId } from "../models";
+import { isMtLang, MT_LANGS } from "../engine/languages";
+import type { TranslationLang } from "../lib/translation";
+import { translateProgress, type TranslateState } from "../lib/useTranslator";
+import { modelInfo, MT_PACKS, mtRoute, type ModelId } from "../models";
 import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { DubPanel } from "./DubPanel";
 import { SceneStudio } from "./SceneStudio";
@@ -18,13 +20,14 @@ import { TimingSection } from "./TimingSection";
 import { VideoLang } from "./VideoLang";
 import { Progress } from "./Indicators";
 import { MethodPicker, methodTitle } from "./MethodPicker";
-import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
+import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select, type Option } from "./Select";
 import {
   Button,
   Hint,
   Pane,
   PaneBody,
   Row,
+  RowGroup,
   RowLabel,
   Section,
   SectionActions,
@@ -95,6 +98,8 @@ export function Inspector({
   translation,
   translationLang,
   translationStale,
+  targetLang,
+  onTargetLang,
   canTranslate,
   onTranslate,
   onCancelTranslate,
@@ -166,6 +171,9 @@ export function Inspector({
   translation: boolean;
   /** The transcript changed after it was translated. */
   translationStale: boolean;
+  /** The language the next translation is into. */
+  targetLang: TranslationLang;
+  onTargetLang: (l: TranslationLang) => void;
   canTranslate: boolean;
   onTranslate: () => void;
   onCancelTranslate: () => void;
@@ -235,8 +243,11 @@ export function Inspector({
             ? `${info.name} ile yeniden dök`
             : `${methodTitle(method)} ile yeniden dök`;
   const numbersApply = sourceLang === "tr";
-  const targetLang = targetOf(sourceLang);
-  const mtModel = `opus-mt-tc-big-${sourceLang}-${targetLang}`;
+  const route = isMtLang(sourceLang) ? mtRoute(sourceLang, targetLang) : [];
+  const targetOptions: Option<TranslationLang>[] = MT_LANGS.filter((l) => l !== sourceLang).map((l) => ({
+    value: l,
+    label: LANG_NAMES[l],
+  }));
 
   return (
     <Pane side="right">
@@ -337,7 +348,7 @@ export function Inspector({
                 <Hint>{langIssue}</Hint>
               ) : (
                 <Hint>
-                  Videoda konuşulan dil. İngilizceyi yalnızca Whisper anlar; İngilizce seçilince model Whisper'a geçer.
+                  Videoda konuşulan dil. Türkçe dışındaki dilleri yalnızca Whisper anlar; seçince model Whisper'a geçer. Ana diller dışındakilerde sonuç daha çok hata içerebilir.
                 </Hint>
               )}
             </Section>
@@ -358,6 +369,11 @@ export function Inspector({
                   onChange={onMethod}
                   disabled={running}
                 />
+              ) : info.id === "mihu" ? (
+                <Hint>
+                  {info.name} sesi 0,32 saniyelik parçalarla çok yollu aramayla işler; kelimeler konuşurken gelir.
+                  Model seçimi üst çubukta.
+                </Hint>
               ) : (
                 <Hint>
                   {info.name} sesi {info.engine === "duyu" ? "12–15" : "30"} saniyelik parçalar hâlinde işler;
@@ -458,13 +474,31 @@ export function Inspector({
                 )}
               </Section>
             )}
-            <Section title={`${LANG_NAMES[targetLang]} çeviri`}>
+            {hasTranslation(sourceLang) && (
+            <Section title="Çeviri">
               <Hint>
-                Transkript cümle cümle {LANG_NAMES[targetLang]}ye çevrilir; her cümle aslının
+                Transkript cümle cümle çevrilir; her cümle aslının
                 zamanında görünür. Transkriptin üstündeki {sourceLang.toUpperCase()} / {targetLang.toUpperCase()} ile
-                altyazı, dışa aktarma ve video için dil seçilir; çeviri de düzenlenebilir. İlk kullanımda yaklaşık 360 MB
-                model indirilir.
+                altyazı, dışa aktarma ve video için dil seçilir; çeviri de düzenlenebilir. İlk kullanımda dil çiftinin
+                modeli indirilir (Türkçe çiftleri yaklaşık 360 MB, diğerleri yaklaşık 135 MB).
               </Hint>
+              <RowGroup>
+                <RowLabel>Hedef dil</RowLabel>
+                <Select<TranslationLang>
+                  label="Çeviri dili"
+                  value={targetLang}
+                  options={targetOptions}
+                  onChange={onTargetLang}
+                  disabled={!!translating || running}
+                  render={(o) => <span className={OPT_TITLE}>{o.label}</span>}
+                />
+              </RowGroup>
+              {route.length > 1 && (
+                <Hint>
+                  {LANG_NAMES[sourceLang]} ile {LANG_NAMES[targetLang]} arasında doğrudan model yok: çeviri İngilizce
+                  üzerinden iki adımda yapılır, biraz daha çok hata içerebilir.
+                </Hint>
+              )}
               {translating && <Progress {...translating} />}
               {translate.status === "error" && (
                 <Hint>Çevrilemedi: {translate.message}</Hint>
@@ -484,15 +518,21 @@ export function Inspector({
                     disabled={!canTranslate || running}
                     onClick={onTranslate}
                   >
-                    {translation ? "Yeniden çevir" : `${LANG_NAMES[targetLang]}ye çevir`}
+                    {translation && translationLang === targetLang ? "Yeniden çevir" : `Çevir: ${LANG_NAMES[targetLang]}`}
                   </Button>
                 )}
               </SectionActions>
               <Hint>
-                <a href={`https://huggingface.co/Helsinki-NLP/${mtModel}`}>{mtModel}</a> (Helsinki-NLP, CC-BY 4.0), bu
-                bilgisayarda çalışır. Yemek adları, özel adlar ve argo yanlış çevrilebilir; paylaşmadan önce göz at.
+                {route.map((pair, i) => (
+                  <span key={pair}>
+                    {i > 0 && ", "}
+                    <a href={`https://huggingface.co/Helsinki-NLP/${MT_PACKS[pair].dir}`}>{MT_PACKS[pair].dir}</a>
+                  </span>
+                ))}{" "}
+                (Helsinki-NLP, CC-BY 4.0), bu bilgisayarda çalışır. Yemek adları, özel adlar ve argo yanlış çevrilebilir; paylaşmadan önce göz at.
               </Hint>
             </Section>
+            )}
             <Section title="Model">
               <dl className="m-0 grid grid-cols-[88px_1fr] gap-x-2.5 gap-y-1.5 text-[12.5px] [&_dd]:m-0 [&_dt]:text-fg-3">
                 <dt>Model</dt>
@@ -516,8 +556,9 @@ export function Inspector({
                 <dd>Ses ve video bu bilgisayardan çıkmaz.</dd>
               </dl>
               <Hint>
-                {info.id === "seda" &&
+                {info.engine === "seda" &&
                   'Sayılar yazıyla gelir ("bin dokuz yüz yirmi üç"). '}
+                {info.id === "mihu" && "Powered by mihu. "}
                 Bir kelimeye tıklayınca kayıt o ana atlar.
               </Hint>
             </Section>

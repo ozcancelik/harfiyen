@@ -27,8 +27,8 @@ export function About() {
       <div className="grid gap-1.5">
         <span className="text-[12px] text-fg-3 tabular-nums">Sürüm {__APP_VERSION__}</span>
         <p className="m-0 max-w-[460px] text-[13px] leading-normal text-fg-2">
-          Türkçe ses ve videoyu tarayıcında yazıya dök, altyazı ekle, dışa aktar. Her şey senin bilgisayarında
-          çalışır; dosyan hiçbir yere gönderilmez.
+          Videoyu tarayıcında yazıya dök, çevir, seslendir, altyazı ekle, dışa aktar. Türkçe ve İngilizce desteklenir.
+          Her şey senin bilgisayarında çalışır; dosyan hiçbir yere gönderilmez.
         </p>
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1.5">

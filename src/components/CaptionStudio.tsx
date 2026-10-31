@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { captionStack, FONTS, fontById, isUserFont, loadCaptionFont, type FontId } from "../captions/fonts";
+import { captionStack, captionWeight, FONTS, fontById, isUserFont, loadCaptionFont, weightBounds, type FontId } from "../captions/fonts";
 import {
   ACCENT_COLORS,
   presetById,
@@ -119,9 +119,11 @@ export function CaptionStudio({
 
   const set = (patch: Partial<CaptionSettings>) => onChange(withOverrides(settings, patch));
   /** Back to the preset's own look. */
-  const resetLook = () => onChange(settingsFor(settings.preset, { ...settings, overrides: [] }));
+  const resetLook = () =>
+    onChange(settingsFor(settings.preset, { ...settings, overrides: [], weight: undefined, italic: undefined, tracking: undefined }));
   const preset = presetById(settings.preset);
   const font = fontById(settings.font);
+  const weights = weightBounds(font);
   const capsOnly = !!font.capsOnly && hasDottedI(lang);
   const added = userFonts.fonts.find((f) => f.id === settings.font);
   // A project whose added font was deleted, or opened in another browser.
@@ -132,7 +134,7 @@ export function CaptionStudio({
     setFontError(null);
     try {
       const f = await addFontFile(file);
-      set({ font: f.id });
+      set({ font: f.id, weight: undefined });
     } catch (e) {
       setFontError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -220,7 +222,7 @@ export function CaptionStudio({
           label="Yazı tipi"
           value={font.id}
           options={fontOptions}
-          onChange={(font) => set({ font })}
+          onChange={(font) => set({ font, weight: undefined })}
           disabled={disabled}
           canRemove={isUserFont}
           onRemove={(id) => {
@@ -230,6 +232,7 @@ export function CaptionStudio({
               onChange({
                 ...settings,
                 font: preset.defaults.font,
+                weight: undefined,
                 overrides: settings.overrides?.filter((k) => k !== "font"),
               });
             void removeFont(id);
@@ -279,6 +282,34 @@ export function CaptionStudio({
             Bu yazı tipinde {[...added.missing].join(" ")} yok, bu harfler {FONTS[0].label} ile görünür.
           </Hint>
         )}
+        {weights && (
+          <Row>
+            <RowLabel>Kalınlık</RowLabel>
+            <Range
+              min={weights[0]}
+              max={weights[1]}
+              step={10}
+              value={captionWeight(font, settings.weight)}
+              onChange={(e) => set({ weight: Number(e.target.value) })}
+            />
+            <RowValue>{captionWeight(font, settings.weight)}</RowValue>
+          </Row>
+        )}
+        <Row>
+          <RowLabel>İtalik</RowLabel>
+          <Switch checked={!!settings.italic} onChange={(e) => set({ italic: e.target.checked })} />
+        </Row>
+        <Row>
+          <RowLabel>Harf aralığı</RowLabel>
+          <Range
+            min={-0.05}
+            max={0.2}
+            step={0.005}
+            value={settings.tracking ?? 0}
+            onChange={(e) => set({ tracking: Number(e.target.value) })}
+          />
+          <RowValue>{Math.round((settings.tracking ?? 0) * 100)}</RowValue>
+        </Row>
         <Row>
           <RowLabel>Boyut</RowLabel>
           <Range

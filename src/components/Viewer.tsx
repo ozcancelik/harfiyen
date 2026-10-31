@@ -136,13 +136,14 @@ export function Viewer({
   }, [active, url]);
 
   const activeFont = settings.kinetic?.on ? settings.kinetic.font : settings.font;
+  const activeItalic = !settings.kinetic?.on && !!settings.italic;
   useEffect(() => {
     let live = true;
-    loadCaptionFont(activeFont, document.fonts).then(() => live && setFontTick((n) => n + 1));
+    loadCaptionFont(activeFont, document.fonts, activeItalic).then(() => live && setFontTick((n) => n + 1));
     return () => {
       live = false;
     };
-  }, [activeFont]);
+  }, [activeFont, activeItalic]);
 
   useEffect(() => {
     if (!el || !isVideo) {

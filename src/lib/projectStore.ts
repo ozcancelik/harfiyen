@@ -11,6 +11,7 @@
 import type { UserFont } from "../captions/fonts";
 import type { CaptionSettings } from "../captions/style";
 import type { DecodingMethod, SpeechLang, Word } from "../engine";
+import { isMtLang, SPEECH_LANGS } from "../engine/languages";
 import { readCrop, type Crop } from "./crop";
 import { DEFAULT_JUMP_CUT, type JumpCut } from "./cuts";
 import { DEFAULT_MODEL, isModelId, type ModelId } from "../models";
@@ -381,7 +382,7 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
   const words = readWords(d.words);
   const t = d.translation as Record<string, unknown> | undefined;
   const translation: Translation | undefined =
-    (t?.lang === "en" || t?.lang === "tr") && typeof t.source === "string"
+    typeof t?.lang === "string" && isMtLang(t.lang) && typeof t.source === "string"
       ? { lang: t.lang, source: t.source, words: readWords(t.words) }
       : undefined;
   const media = d.media as MediaInfo | null;
@@ -395,7 +396,7 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
     model: isModelId(d.model) ? d.model : DEFAULT_MODEL,
     imported: typeof d.imported === "string" ? d.imported : undefined,
     method: (d.method as DecodingMethod) ?? "beam-lm",
-    lang: d.lang === "en" ? "en" : undefined,
+    lang: SPEECH_LANGS.some((l) => l.code === d.lang && l.code !== "tr") ? (d.lang as SpeechLang) : undefined,
     duration: num(d.duration),
     elapsed: num(d.elapsed),
     stoppedAt: num(d.stoppedAt) ?? undefined,

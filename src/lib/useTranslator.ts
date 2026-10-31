@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Word } from "../engine";
 import type { FromMt, ToMt } from "../worker/mt.worker";
 import type { SpeechLang } from "../engine";
+import { isMtLang } from "../engine/languages";
+import { mtRoute } from "../models";
 import { placeTranslation, sourceKey, splitSentences, type Translation, type TranslationLang } from "./translation";
 
 export type TranslateState =
@@ -24,7 +26,7 @@ export function translateProgress(s: TranslateState): { label: string; value: nu
   return null;
 }
 
-/** The language a transcript in `from` is translated into: the other one. */
+/** The language a transcript in `from` is translated into unless another is chosen: English, or Turkish for English. */
 export const translationLang = (from: SpeechLang): TranslationLang => (from === "en" ? "tr" : "en");
 
 /** Translates the transcript into its other language in its own worker, a sentence at a time. */
@@ -73,20 +75,20 @@ export function useTranslator() {
 
   useEffect(() => () => worker.current?.terminate(), []);
 
-  /** `words` are in `from`. `onDone` gets the translation, unless another call or cancel() came first. */
+  /** `words` are in `from`, translated into `lang`. `onDone` gets the translation, unless another call or cancel() came first. */
   const translate = useCallback(
-    (words: Word[], from: SpeechLang, onDone: (t: Translation) => void) => {
+    (words: Word[], from: SpeechLang, lang: TranslationLang, onDone: (t: Translation) => void) => {
+      if (!isMtLang(from) || from === lang) return;
       const w = ensureWorker();
       w.postMessage({ type: "cancel", jobId: jobId.current } satisfies ToMt);
       const id = ++jobId.current;
-      const lang = translationLang(from);
       pending.current = { words, lang, onDone };
       sentences.current = splitSentences(words);
       setState({ status: "running", done: 0, total: sentences.current.length });
       w.postMessage({
         type: "translate",
         jobId: id,
-        pair: from === "en" ? "en-tr" : "tr-en",
+        pairs: mtRoute(from, lang),
         sentences: sentences.current.map((s) => s.text),
       } satisfies ToMt);
     },

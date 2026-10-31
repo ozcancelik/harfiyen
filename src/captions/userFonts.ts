@@ -65,9 +65,10 @@ export async function removeFont(id: UserFontId) {
 
 let probes = 0;
 
-async function inspect(data: ArrayBuffer): Promise<Pick<UserFont, "capsOnly" | "missing">> {
+async function inspect(data: ArrayBuffer): Promise<Pick<UserFont, "capsOnly" | "missing" | "weightRange">> {
   const family = `Harfiyen Probe ${++probes}`;
-  const face = new FontFace(family, data);
+  // Declared as taking any weight, so a variable font follows the weight asked for and a static one is left alone.
+  const face = new FontFace(family, data, { weight: "1 1000" });
   try {
     await face.load();
   } catch {
@@ -86,10 +87,28 @@ async function inspect(data: ArrayBuffer): Promise<Pick<UserFont, "capsOnly" | "
         }),
       ).size === 1;
     if (![..."aeiAEI"].every(has)) throw new Error("Bu yazı tipinde Latin harfleri yok.");
-    return { capsOnly: !dotted(ctx, family), missing: [...TURKISH].filter((c) => !has(c)).join("") };
+    return { capsOnly: !dotted(ctx, family), missing: [...TURKISH].filter((c) => !has(c)).join(""), weightRange: weights(ctx, family) };
   } finally {
     document.fonts.delete(face);
   }
+}
+
+/**
+ * "min max" when the font has a weight axis, else undefined: a static font is the same width at every weight,
+ * a variable one changes until the ends of its axis.
+ */
+function weights(ctx: OffscreenCanvasRenderingContext2D, family: string): string | undefined {
+  const at = (w: number) => {
+    ctx.font = `${w} 100px "${family}", monospace`;
+    return ctx.measureText("Hamburgefonstiv").width;
+  };
+  const steps = [100, 200, 300, 400, 500, 600, 700, 800, 900];
+  const widths = steps.map(at);
+  const same = (a: number, b: number) => Math.abs(a - b) < 0.01;
+  // Weights below the axis's minimum look like it, as do those above its maximum.
+  const lo = steps.filter((_, i) => same(widths[i], widths[0])).pop()!;
+  const hi = steps.find((_, i) => same(widths[i], widths[8]))!;
+  return hi > lo ? `${lo} ${hi}` : undefined;
 }
 
 /** Whether "i" is drawn as a dot above a stem: an empty row between inked ones. */

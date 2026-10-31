@@ -10,7 +10,7 @@ import { diarize, Features, SpeakerEmbedder } from "../diarize";
 import type { Word } from "../engine";
 import type { Ort } from "../engine/models";
 import { packFileUrl, SPEAKER_PACK } from "../models";
-import { fetchAll } from "./modelStore";
+import { fetchAll, fetchManifest } from "./modelStore";
 import { pcmChunks } from "./pcm";
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -51,9 +51,10 @@ let queue: Promise<void> = Promise.resolve();
 class Undecodable extends Error {}
 
 async function load(jobId: number): Promise<SpeakerEmbedder> {
-  const res = await fetch(packFileUrl(SPEAKER_PACK, SPEAKER_PACK.manifest), { cache: "no-cache" });
-  if (!res.ok) throw new Error("Konuşmacı modeli bulunamadı. Önce `npm run models` çalıştırılmalı.");
-  const cfg: { files: Record<string, number> } = await res.json();
+  const { data: cfg } = await fetchManifest<{ files: Record<string, number> }>(
+    packFileUrl(SPEAKER_PACK, SPEAKER_PACK.manifest),
+  );
+  if (!cfg) throw new Error("Konuşmacı modeli bulunamadı. Önce `npm run models` çalıştırılmalı.");
   const [model, wasm] = await fetchAll(
     [
       ...SPEAKER_PACK.files.map((f) => ({ url: packFileUrl(SPEAKER_PACK, f), size: cfg.files[f] })),

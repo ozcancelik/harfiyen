@@ -5,15 +5,16 @@ import { dubWav, type DubClip } from "../tts/dub";
 import type { StoredDub } from "./projectStore";
 import { RATE } from "../tts/ema";
 import { splitSentences } from "./translation";
+import { isMtLang } from "../engine/languages";
 import type { DubLang, DubLine, DubOverflow, FromTts, ToTts, Voice, VoiceModel } from "../worker/tts.worker";
 
 export type { DubLang, DubOverflow, Voice, VoiceModel };
 export const DEFAULT_VOICE: Voice = { lang: "tr", model: "ema", style: "M3", pitch: 0, seed: 0 };
 
-/** Only Supertonic reads English; a saved voice from before languages reads Turkish. */
+/** Only Supertonic reads a language other than Turkish; a saved voice from before languages reads Turkish. */
 export function fitVoice(v: Voice): Voice {
-  const lang = v.lang === "en" ? "en" : "tr";
-  return { ...v, lang, model: lang === "en" ? "supertonic" : v.model };
+  const lang = isMtLang(v.lang) ? v.lang : "tr";
+  return { ...v, lang, model: lang === "tr" ? v.model : "supertonic" };
 }
 
 export const sameVoice = (a: Voice, b: Voice) =>
@@ -26,15 +27,19 @@ export const sameVoice = (a: Voice, b: Voice) =>
 const SAMPLE: Record<DubLang, string> = {
   tr: "Merhaba, seslendirme bu sesle yapılacak.",
   en: "Hello, the dub will be read in this voice.",
+  de: "Hallo, die Synchronisation wird mit dieser Stimme gesprochen.",
+  fr: "Bonjour, le doublage sera lu avec cette voix.",
+  es: "Hola, el doblaje se leerá con esta voz.",
+  ru: "Здравствуйте, дубляж будет озвучен этим голосом.",
 };
 
 /**
- * Read a sentence at a time: a translation (into either language), and English. A translated sentence keeps its
+ * Read a sentence at a time: a translation, and any language but Turkish. A translated sentence keeps its
  * source's start, but its words are not timed, so caption lines would cut it at made-up places; read whole, it
  * also sounds like one sentence. A Turkish transcript is read a caption line at a time.
  */
-export const dubBySentence = (voiceLang: DubLang, transcriptLang: DubLang) =>
-  voiceLang !== transcriptLang || voiceLang === "en";
+export const dubBySentence = (voiceLang: DubLang, transcriptLang: string) =>
+  voiceLang !== transcriptLang || voiceLang !== "tr";
 
 /** Turn plain user text into timed placeholder words (one cue per sentence or line). */
 export function wordsFromText(text: string): Word[] {

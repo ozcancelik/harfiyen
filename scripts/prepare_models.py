@@ -563,8 +563,13 @@ def prepare_whisper() -> None:
     print(f"whisper: {sum(whisper['files'].values()) / 1e6:.0f} MB")
 
 
-# Translation, both ways: Turkish -> English, and English -> Turkish for English videos. Same architecture.
-MT_REPOS = ["Helsinki-NLP/opus-mt-tc-big-tr-en", "Helsinki-NLP/opus-mt-tc-big-en-tr"]
+# Translation, to and from English: Turkish (the larger tc-big models), and German, French, Spanish and Russian
+# (the base opus-mt models). Same architecture; other pairs go through English.
+MT_REPOS = [
+    "Helsinki-NLP/opus-mt-tc-big-tr-en",
+    "Helsinki-NLP/opus-mt-tc-big-en-tr",
+    *[f"Helsinki-NLP/opus-mt-{a}-{b}" for l in ["de", "fr", "es", "ru"] for a, b in [(l, "en"), ("en", l)]],
+]
 MT_FILES = ["encoder.int8.onnx", "decoder.int8.onnx", "spm.json"]
 
 
@@ -861,6 +866,74 @@ def prepare_duyu(cache: Path) -> None:
     print(f"duyu: {sum(duyu['files'].values()) / 1e6:.0f} MB")
 
 
+MIHU_REPO = "mihuai/turkish-stt-66m-v2"
+MIHU_OUT = ROOT / "public" / "models" / "turkish-stt-66m-v2"
+MIHU_FILES = ["encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt", "LICENSE"]
+
+
+def prepare_mihu(cache: Path, seda_cache: Path) -> None:
+    """turkish-stt-66m-v2 (mihu Community License), converted for WebGPU like seda-v0.2."""
+    cache.mkdir(parents=True, exist_ok=True)
+    for f in MIHU_FILES:
+        p = cache / f
+        if not p.exists():
+            url = f"https://huggingface.co/{MIHU_REPO}/resolve/main/{f}"
+            print("download", url)
+            urllib.request.urlretrieve(url, str(p) + ".part")
+            os.replace(str(p) + ".part", p)
+
+    vad_src = seda_cache / "silero_vad.onnx"
+    if not vad_src.exists():
+        seda_cache.mkdir(parents=True, exist_ok=True)
+        url = f"https://huggingface.co/{REPO}/resolve/main/vad/silero_vad.onnx"
+        print("download", url)
+        urllib.request.urlretrieve(url, str(vad_src) + ".part")
+        os.replace(str(vad_src) + ".part", vad_src)
+
+    MIHU_OUT.mkdir(parents=True, exist_ok=True)
+    dst_enc = MIHU_OUT / "encoder.webgpu.onnx"
+    convert_matmul_integer(cache / "encoder.int8.onnx", dst_enc)
+    simplify_static(dst_enc)
+    externalize_pad_mask(dst_enc)
+    for f in ["decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt", "LICENSE"]:
+        shutil.copy(cache / f, MIHU_OUT / f)
+    shutil.copy(vad_src, MIHU_OUT / "silero_vad.onnx")
+
+    enc = meta(cache / "encoder.int8.onnx")
+    dec = meta(cache / "decoder.int8.onnx")
+    tokens = (cache / "tokens.txt").read_text().split("\n")
+    unk = next(int(t.split()[1]) for t in tokens if t.startswith("<unk> "))
+    out_files = [
+        "encoder.webgpu.onnx",
+        "decoder.int8.onnx",
+        "joiner.int8.onnx",
+        "tokens.txt",
+        "silero_vad.onnx",
+    ]
+    cfg = {
+        "name": "turkish-stt-66m-v2",
+        "sampleRate": 16000,
+        "featureDim": 80,
+        "chunkSize": int(enc["T"]),
+        "chunkShift": int(enc["decode_chunk_len"]),
+        "subsampling": 4,
+        "frameShiftMs": 10,
+        "contextSize": int(dec["context_size"]),
+        "vocabSize": int(dec["vocab_size"]),
+        "blankId": 0,
+        "unkId": unk,
+        "encoderStates": [
+            i.name
+            for i in onnx.load(str(dst_enc), load_external_data=False).graph.input
+            if i.name not in ("x", "pad_mask")
+        ],
+        **encoder_shape(cache / "encoder.int8.onnx"),
+        "files": {f: (MIHU_OUT / f).stat().st_size for f in out_files},
+    }
+    (MIHU_OUT / "model.json").write_text(json.dumps(cfg, indent=2))
+    print(f"mihu: {sum(cfg['files'].values()) / 1e6:.0f} MB")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", type=Path, default=ROOT / ".cache" / "seda-v0.2")
@@ -869,11 +942,13 @@ def main() -> None:
     ap.add_argument("--mt-only", action="store_true", help="only (re)build the translation models")
     ap.add_argument("--ahenk-only", action="store_true", help="only download Ahenk Cep")
     ap.add_argument("--duyu-only", action="store_true", help="only (re)build Duyu-small")
+    ap.add_argument("--mihu-only", action="store_true", help="only (re)build turkish-stt-66m-v2")
     ap.add_argument("--supertonic-only", action="store_true", help="only (re)build Supertonic 3")
     ap.add_argument("--formatter-only", action="store_true", help="only (re)build seda-v0.2's formatter")
     ap.add_argument("--speakers-only", action="store_true", help="only download the speaker model")
     args = ap.parse_args()
     duyu_cache = args.src.parent / "duyu-small"
+    mihu_cache = args.src.parent / "turkish-stt-66m-v2"
     supertonic_cache = args.src.parent / "supertonic-3"
     if args.whisper_only:
         prepare_whisper()
@@ -892,6 +967,9 @@ def main() -> None:
         return
     if args.duyu_only:
         prepare_duyu(duyu_cache)
+        return
+    if args.mihu_only:
+        prepare_mihu(mihu_cache, args.src)
         return
     if args.supertonic_only:
         prepare_supertonic(supertonic_cache)
@@ -918,6 +996,7 @@ def main() -> None:
     convert_fst(args.src / "lm/2gram.fst", OUT / "lodr.bin")
     write_config(args.src)
     prepare_formatter(args.src)
+    prepare_mihu(mihu_cache, args.src)
     prepare_whisper()
     prepare_duyu(duyu_cache)
     prepare_ema()

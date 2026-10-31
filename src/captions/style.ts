@@ -63,6 +63,12 @@ export interface CaptionSettings {
   font: FontId;
   /** Font size relative to the shorter side of the frame. */
   size: number;
+  /** Weight asked for; missing: the font's own. Only variable fonts take one (see weightBounds). */
+  weight?: number;
+  /** Italic: the font's own where it has one, else the text is slanted. Missing: upright. */
+  italic?: boolean;
+  /** Space between letters in em (negative: tighter). Missing: none. */
+  tracking?: number;
   position: "bottom" | "middle" | "top";
   textColor: string;
   accentColor: string;
@@ -116,6 +122,9 @@ export interface Preset {
   defaults: Omit<
     CaptionSettings,
     | "preset"
+    | "weight"
+    | "italic"
+    | "tracking"
     | "aura"
     | "auraStyle"
     | "voiceEmphasis"
@@ -352,6 +361,9 @@ export const settingsFor = (id: PresetId, prev?: CaptionSettings): CaptionSettin
   const overrides = prev?.overrides ?? [];
   return {
     preset: id,
+    weight: prev?.weight,
+    italic: prev?.italic,
+    tracking: prev?.tracking,
     aura: prev?.aura ?? "cini",
     auraStyle: prev?.auraStyle ?? "aura",
     voiceEmphasis: prev?.voiceEmphasis ?? false,

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import ortWasmUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
 import type { DecodeOptions, SpeechLang, Word } from "../engine";
-import { DEFAULT_MODEL, isModelId, modelFileUrl, modelInfo, type ModelId } from "../models";
+import { DEFAULT_MODEL, isModelId, modelFileUrl, modelInfo, MODELS, type ModelId } from "../models";
 import { allCached } from "../worker/modelStore";
 import { BAND_RATE, PEAK_STEP, type AlignSpan, type FromWorker, type ProviderChoice, type ToWorker } from "../worker/protocol";
 import { decodeWithAudioContext } from "./decodeFallback";
@@ -88,10 +89,16 @@ function loadModel(): ModelId {
   }
 }
 
-/** True if the model's files are all in the cache, so loading costs no download. */
+/** True if the model's files and the ONNX runtime are in the cache, so loading costs no download. */
 export function modelIsCached(id: ModelId) {
   const m = modelInfo(id);
-  return allCached(m.files.map((f) => modelFileUrl(m, f)));
+  return allCached([...m.files.map((f) => modelFileUrl(m, f)), ortWasmUrl]);
+}
+
+/** Which speech models are completely stored in the cache and ready for offline use. */
+export async function cachedSpeechModels(): Promise<Set<ModelId>> {
+  const flags = await Promise.all(MODELS.map((m) => modelIsCached(m.id)));
+  return new Set(MODELS.filter((_, i) => flags[i]).map((m) => m.id));
 }
 
 function loadProvider(): ProviderChoice {

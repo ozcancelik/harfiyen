@@ -63,13 +63,13 @@ function StyleCard({
 
   useEffect(() => {
     let live = true;
-    loadCaptionFont(s.font, document.fonts).then(
+    loadCaptionFont(s.font, document.fonts, s.italic).then(
       () => live && setFontTick((n) => n + 1),
     );
     return () => {
       live = false;
     };
-  }, [s.font]);
+  }, [s.font, s.italic]);
 
   useEffect(() => {
     const c = canvas.current!;

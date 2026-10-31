@@ -2,8 +2,11 @@
 // VITE_MODELS_BASE_URL (default /models) in each model's directory.
 
 import type { SpeechLang } from "./engine/config";
+import { MT_LANGS, SPEECH_LANGS, type MtLang } from "./engine/languages";
 
-export type ModelId = "seda" | "duyu" | "whisper-turbo" | "whisper-turbo-q4";
+const ALL_LANGS: SpeechLang[] = SPEECH_LANGS.map((l) => l.code);
+
+export type ModelId = "seda" | "mihu" | "duyu" | "whisper-turbo" | "whisper-turbo-q4";
 
 export const MODELS_BASE = (import.meta.env.VITE_MODELS_BASE_URL || `${import.meta.env.BASE_URL}models`).replace(/\/+$/, "");
 
@@ -71,6 +74,30 @@ export const MODELS: ModelInfo[] = [
     langs: ["tr"],
   },
   {
+    id: "mihu",
+    engine: "seda",
+    name: "Mihu",
+    tier: "Çok hızlı",
+    note: "Küçük ve düşük gecikmeli; canlı kayıtta ve her cihazda çalışır.",
+    size: "70 MB",
+    spec: "turkish-stt-66m-v2",
+    dir: "turkish-stt-66m-v2",
+    files: [
+      "encoder.webgpu.onnx",
+      "decoder.int8.onnx",
+      "joiner.int8.onnx",
+      "tokens.txt",
+      "silero_vad.onnx",
+    ],
+    link: "https://huggingface.co/mihuai/turkish-stt-66m-v2",
+    live: true,
+    gpuOnly: false,
+    cpuOnly: false,
+    needsF16: false,
+    punctuates: false,
+    langs: ["tr"],
+  },
+  {
     id: "duyu",
     engine: "duyu",
     name: "Duyu",
@@ -104,7 +131,7 @@ export const MODELS: ModelInfo[] = [
     cpuOnly: false,
     needsF16: true,
     punctuates: true,
-    langs: ["tr", "en"],
+    langs: ALL_LANGS,
   },
   {
     id: "whisper-turbo",
@@ -122,7 +149,7 @@ export const MODELS: ModelInfo[] = [
     cpuOnly: false,
     needsF16: true,
     punctuates: true,
-    langs: ["tr", "en"],
+    langs: ALL_LANGS,
   },
 ];
 
@@ -180,33 +207,61 @@ export const SPEAKER_PACK: ModelPack = {
   needsF16: false,
 };
 
-/** Translation directions: from the transcript's language to the other. */
-export type MtPair = "tr-en" | "en-tr";
+/** A translation model's direction: from the transcript's language to the target. */
+export type MtPair = `${MtLang}-${MtLang}`;
 
-export const MT_PACKS: Record<MtPair, ModelPack> = {
-  "tr-en": {
-    id: "mt",
-    kind: "mt",
-    name: "İngilizce çeviri",
-    note: "opus-mt-tc-big-tr-en; Türkçe transkripti cümle cümle İngilizceye çevirir.",
-    dir: "opus-mt-tc-big-tr-en",
-    manifest: "model.json",
-    files: ["encoder.int8.onnx", "decoder.int8.onnx", "spm.json"],
-    gpuOnly: false,
-    needsF16: false,
-  },
-  "en-tr": {
-    id: "mt-en-tr",
-    kind: "mt",
-    name: "Türkçe çeviri",
-    note: "opus-mt-tc-big-en-tr; İngilizce transkripti cümle cümle Türkçeye çevirir.",
-    dir: "opus-mt-tc-big-en-tr",
-    manifest: "model.json",
-    files: ["encoder.int8.onnx", "decoder.int8.onnx", "spm.json"],
-    gpuOnly: false,
-    needsF16: false,
-  },
+/** Each model translates to or from English; the Turkish pair has the larger "tc-big" model. */
+const MT_REPOS: Partial<Record<MtPair, string>> = {
+  "tr-en": "opus-mt-tc-big-tr-en",
+  "en-tr": "opus-mt-tc-big-en-tr",
 };
+
+const MT_NAMES: Record<MtLang, string> = {
+  tr: "Türkçe",
+  en: "İngilizce",
+  de: "Almanca",
+  fr: "Fransızca",
+  es: "İspanyolca",
+  ru: "Rusça",
+};
+
+/** The language names with the "to" ending. */
+const MT_TO: Record<MtLang, string> = {
+  tr: "Türkçeye",
+  en: "İngilizceye",
+  de: "Almancaya",
+  fr: "Fransızcaya",
+  es: "İspanyolcaya",
+  ru: "Rusçaya",
+};
+
+const mtPack = (pair: MtPair): ModelPack => {
+  const [from, to] = pair.split("-") as [MtLang, MtLang];
+  const dir = MT_REPOS[pair] ?? `opus-mt-${pair}`;
+  return {
+    // The two Turkish packs keep the ids they were first stored under.
+    id: pair === "tr-en" ? "mt" : pair === "en-tr" ? "mt-en-tr" : `mt-${pair}`,
+    kind: "mt",
+    name: pair === "tr-en" ? "İngilizce çeviri" : pair === "en-tr" ? "Türkçe çeviri" : `${MT_NAMES[from]} → ${MT_NAMES[to]} çeviri`,
+    note: `${dir}; ${MT_NAMES[from]} transkripti cümle cümle ${MT_TO[to]} çevirir.`,
+    dir,
+    manifest: "model.json",
+    files: ["encoder.int8.onnx", "decoder.int8.onnx", "spm.json"],
+    gpuOnly: false,
+    needsF16: false,
+  };
+};
+
+const PAIRS = MT_LANGS.flatMap((l) => (l === "en" ? [] : ([`${l}-en`, `en-${l}`] as MtPair[])));
+
+export const MT_PACKS = Object.fromEntries(PAIRS.map((p) => [p, mtPack(p)])) as Record<MtPair, ModelPack>;
+
+/** The models a translation runs through, in order: one when English is at either end, else via English. */
+export function mtRoute(from: MtLang, to: MtLang): MtPair[] {
+  if (from === to) return [];
+  if (from === "en" || to === "en") return [`${from}-${to}` as MtPair];
+  return [`${from}-en` as MtPair, `en-${to}` as MtPair];
+}
 
 /** Dubbing voices; the file order is the order the TTS worker takes them in. */
 export const VOICE_PACKS = {
@@ -247,7 +302,7 @@ export const VOICE_PACKS = {
     id: "tts-supertonic",
     kind: "tts",
     name: "Supertonic 3",
-    note: "Seslendirme sesi; İngilizce ve Türkçe okur.",
+    note: "Seslendirme sesi; Türkçe, İngilizce, Almanca, Fransızca, İspanyolca ve Rusça okur.",
     dir: "supertonic-3",
     manifest: "model.json",
     files: [
@@ -279,8 +334,7 @@ export const PACKS: ModelPack[] = [
   ),
   PUNCT_PACK,
   SPEAKER_PACK,
-  MT_PACKS["tr-en"],
-  MT_PACKS["en-tr"],
+  ...PAIRS.map((p) => MT_PACKS[p]),
   VOICE_PACKS.ema,
   VOICE_PACKS.mini,
   VOICE_PACKS.ahenk,

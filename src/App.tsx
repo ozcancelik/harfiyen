@@ -52,6 +52,7 @@ import { MoreMenu } from "./components/MoreMenu";
 import { Settings } from "./components/Settings";
 import { ProviderMenu } from "./components/ProviderMenu";
 import { StatusBar } from "./components/StatusBar";
+import { UpdateToast } from "./components/UpdateToast";
 import { Timeline, TIMELINE } from "./components/Timeline";
 import { Transcript } from "./components/Transcript";
 import { Viewer } from "./components/Viewer";
@@ -84,6 +85,7 @@ import {
   saveDub,
 } from "./lib/projectStore";
 import { useBurner } from "./lib/useBurner";
+import { useTabProgress } from "./lib/useTabProgress";
 import { useSourceInfo } from "./lib/useSourceInfo";
 import { useWaveform } from "./lib/useWaveform";
 import { useLogo } from "./lib/logo";
@@ -137,12 +139,14 @@ import {
 import { DUB_RATE, dubMetrics } from "./tts/dub";
 import { useProjects } from "./lib/useProjects";
 import {
+  cachedSpeechModels,
   canResume,
   modelIsCached,
   useTranscriber,
   type TimeRange,
 } from "./lib/useTranscriber";
-import { useTranslator } from "./lib/useTranslator";
+import { warmManifests } from "./lib/modelLibrary";
+import { translationLang, useTranslator } from "./lib/useTranslator";
 import { useSpeakers } from "./lib/useSpeakers";
 import {
   assign as assignSpeaker,
@@ -151,9 +155,10 @@ import {
   rename as renameSpeaker,
   type Speakers,
 } from "./lib/speakers";
-import { sourceKey, type Translation } from "./lib/translation";
-import { LANG_NAMES } from "./lib/lang";
-import { DEFAULT_MODEL, modelInfo } from "./models";
+import { sourceKey, type Translation, type TranslationLang } from "./lib/translation";
+import { DEFAULT_LANG } from "./engine/languages";
+import { hasTranslation, LANG_NAMES } from "./lib/lang";
+import { DEFAULT_MODEL, modelInfo, MODELS, type ModelId } from "./models";
 
 const EMPTY_BANDS = new Float32Array(0);
 const NO_CUTS: TimeRange[] = [];
@@ -298,15 +303,29 @@ export function App() {
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [offline, setOffline] = useState(
+    () => typeof navigator !== "undefined" && navigator.onLine === false,
+  );
+  const [cachedModels, setCachedModels] = useState<ReadonlySet<ModelId>>(
+    () => new Set(),
+  );
+  useEffect(() => {
+    warmManifests();
+    const syncOnline = () => setOffline(navigator.onLine === false);
+    window.addEventListener("online", syncOnline);
+    window.addEventListener("offline", syncOnline);
+    return () => {
+      window.removeEventListener("online", syncOnline);
+      window.removeEventListener("offline", syncOnline);
+    };
+  }, []);
+  useEffect(() => {
+    if (settingsOpen) return;
+    void cachedSpeechModels().then(setCachedModels);
+  }, [settingsOpen, engine.phase, model]);
   const [method, setMethod] = useState<DecodingMethod>("beam-lm");
   /** The language spoken in the media, for the next transcription; a project brings its own. */
-  const [videoLang, setVideoLang] = useState<SpeechLang>(() =>
-    localStorage.getItem("harfiyen.videoLang") === "en" ? "en" : "tr",
-  );
-  useEffect(
-    () => localStorage.setItem("harfiyen.videoLang", videoLang),
-    [videoLang],
-  );
+  const [videoLang, setVideoLang] = useState<SpeechLang>(DEFAULT_LANG);
   const [settings, setSettings] = useState<CaptionSettings>(loadSettings);
   /** The part of the video shown and exported; belongs to the project, unlike the style. */
   const [crop, setCrop] = useState<Crop | null>(null);
@@ -438,6 +457,13 @@ export function App() {
     trimming ? NO_CUTS : cuts,
   );
   const following = useFollow(player, job);
+  useTabProgress(
+    burner.state.status === "running"
+      ? burner.state.progress * 100
+      : job?.status === "running" && !job.live && job.duration
+        ? (job.decoded / job.duration) * 100
+        : null,
+  );
   // The style cards show the project's ground; only made while they are on screen.
   const ground = useGroundPreview({
     active: inspectorTab === "captions" || inspectorTab === "scene",
@@ -679,8 +705,10 @@ export function App() {
       setCrop(null);
       setTrim(null);
       setJumpCut(offJumpCut());
+      // The language belongs to the file, not to the project before it.
+      setVideoLang(DEFAULT_LANG);
       // Not transcribed yet: first the frame and the part to use, then "Yazıya dök".
-      open(f, optionsFor(method, videoLang));
+      open(f, optionsFor(method, DEFAULT_LANG));
     },
     [
       open,
@@ -733,6 +761,7 @@ export function App() {
     setTrim(null);
     setJumpCut(offJumpCut());
     setCustomText("");
+    setVideoLang(DEFAULT_LANG);
     clear();
   };
 
@@ -851,6 +880,11 @@ export function App() {
       : null;
   /** The language spoken in the media, as the open transcript was made in. */
   const sourceLang: SpeechLang = job ? (job.options.lang ?? "tr") : voice.lang;
+  /** What the next translation is into: the pick, else the open translation's, else English (Turkish for English). */
+  const [targetPick, setTargetPick] = useState<TranslationLang | null>(null);
+  const targetLang: TranslationLang =
+    [targetPick, translation?.lang].find((l): l is TranslationLang => !!l && l !== sourceLang) ??
+    (translationLang(sourceLang) as TranslationLang);
   useEffect(() => {
     if (isTts) setCustomText(textFromWords(words));
   }, [isTts, words]);
@@ -1079,11 +1113,11 @@ export function App() {
   const cancelSpeakers = speakerTool.cancel;
   useEffect(() => cancelSpeakers(), [job?.id, cancelSpeakers]);
   /** `then` runs with the translation once it is made (not if it is cancelled or the job changes). */
-  const translate = (then?: (t: Translation) => void) => {
+  const translate = (then?: (t: Translation) => void, into: TranslationLang = targetLang) => {
     if (!job) return;
     const id = job.id;
     const before = job.translation;
-    translator.translate(words, sourceLang, (t) => {
+    translator.translate(words, sourceLang, into, (t) => {
       // A new translation replaces any edits to the old one; ⌘Z brings them back.
       if (before) {
         history.current.push({ jobId: id, en: true, words: before.words });
@@ -1273,7 +1307,7 @@ export function App() {
   );
   const chooseVideoLang = (l: SpeechLang) => {
     setVideoLang(l);
-    // Only Whisper knows English: its light version, unless it cannot run here.
+    // Only Whisper knows the other languages: its light version, unless it cannot run here.
     if (!modelInfo(model).langs.includes(l) && !gpuReason)
       setModel("whisper-turbo-q4");
   };
@@ -1650,7 +1684,33 @@ export function App() {
     gpuReason,
     locked: engineBusy,
     lang: videoLang,
+    cached: cachedModels,
+    offline,
   };
+  // When offline and the selected model is not cached, switch to one that is.
+  useEffect(() => {
+    if (!offline || engineBusy || cachedModels.has(model)) return;
+    const fallback = MODELS.find(
+      (m) =>
+        cachedModels.has(m.id) &&
+        m.langs.includes(videoLang) &&
+        !(m.gpuOnly && gpuReason),
+    );
+    if (fallback) {
+      setModel(fallback.id);
+      setNotice(
+        `Çevrimdışısın; bu tarayıcıda hazır olan ${fallback.name} modeline geçildi.`,
+      );
+    }
+  }, [
+    offline,
+    engineBusy,
+    cachedModels,
+    model,
+    videoLang,
+    gpuReason,
+    setModel,
+  ]);
   const providerProps = {
     value: provider,
     engine,
@@ -1827,6 +1887,14 @@ export function App() {
         <Pane side="left" label="Transkript">
           <PaneHead>
             <PaneTitle>Transkript</PaneTitle>
+            {!translation && job && (
+              <span
+                className="mr-auto rounded-[4px] bg-well px-1.5 py-0.5 text-[10.5px] font-semibold tracking-[0.02em] text-fg-3"
+                title={`${LANG_NAMES[sourceLang]} transkript`}
+              >
+                {sourceLang.toUpperCase()}
+              </span>
+            )}
             {translation && (
               <span
                 className="mr-auto -my-1 flex gap-0.5 rounded-md border border-line-soft bg-well p-0.5"
@@ -2087,7 +2155,7 @@ export function App() {
                 title={
                   dragging ? "Bırak, başlayalım" : "Video ya da ses dosyası aç"
                 }
-                text="Türkçe konuşmayı yazıya döker, altyazıyı videonun içine yazar. Her şey bu bilgisayarda, ekran kartında çalışır; dosyan hiçbir yere gönderilmez."
+                text="Konuşmayı yazıya döker, çevirir, seslendirir ve altyazıyı videonun içine yazar. Türkçe ve İngilizce desteklenir. Her şey bu bilgisayarda, ekran kartında çalışır; dosyan hiçbir yere gönderilmez."
                 actions={
                   <>
                     <Button
@@ -2130,13 +2198,30 @@ export function App() {
                 fine={
                   <>
                     Dosyayı pencereye sürükleyebilirsin: MP4, MOV, MKV, WebM,
-                    MP3, M4A, WAV, FLAC, OGG; altyazı için SRT ve VTT. İlk
-                    kullanımda yaklaşık {chosen.size} model ({chosen.name})
-                    indirilir ve saklanır.
-                    {engine.phase === "idle" && (
+                    MP3, M4A, WAV, FLAC, OGG; altyazı için SRT ve VTT.{" "}
+                    {cachedModels.has(model) ? (
                       <>
-                        {" "}
-                        <LinkButton onClick={prepare}>Şimdi indir</LinkButton>
+                        {chosen.name} modeli bu tarayıcıda hazır; internet
+                        olmadan da çalışır.
+                      </>
+                    ) : offline ? (
+                      <>
+                        Çevrimdışısın ve {chosen.name} modeli henüz
+                        indirilmemiş. Modeller bir kez indirildikten sonra
+                        internet olmadan çalışır.
+                      </>
+                    ) : (
+                      <>
+                        İlk kullanımda yaklaşık {chosen.size} model (
+                        {chosen.name}) indirilir ve saklanır.
+                        {engine.phase === "idle" && (
+                          <>
+                            {" "}
+                            <LinkButton onClick={prepare}>
+                              Şimdi indir
+                            </LinkButton>
+                          </>
+                        )}
                       </>
                     )}
                   </>
@@ -2190,11 +2275,11 @@ export function App() {
           onDubOverflow={() => {
             if (!dubOverflow) return;
             // The line as it is read: in the translation for an English dub.
-            setShowEn(voice.lang === "en");
+            setShowEn(voice.lang !== sourceLang);
             player.seek(dubOverflow.start);
           }}
           onExtendTrim={longerTrim && (() => changeTrim(longerTrim))}
-          dubName={`${voice.lang === "en" ? `${name}.en` : name}.seslendirme.wav`}
+          dubName={`${voice.lang === "tr" ? name : `${name}.${voice.lang}`}.seslendirme.wav`}
           voice={voice}
           onVoice={setVoice}
           preview={dubber.preview}
@@ -2236,11 +2321,13 @@ export function App() {
             onClear: () => commitSpeakers(undefined),
           }}
           translationStale={translationStale}
-          canTranslate={!!job && job.status !== "running" && words.length > 0}
+          targetLang={targetLang}
+          onTargetLang={setTargetPick}
+          canTranslate={!!job && job.status !== "running" && words.length > 0 && hasTranslation(sourceLang)}
           onTranslate={() => translate()}
           onCancelTranslate={translator.cancel}
-          canTranslateDub={editable && !!job?.file && words.length > 0}
-          onTranslateDub={() => translate((t) => startDub(t.words))}
+          canTranslateDub={editable && !!job?.file && words.length > 0 && hasTranslation(sourceLang)}
+          onTranslateDub={() => translate((t) => startDub(t.words), voice.lang)}
           tab={inspectorTab}
           onTab={setInspectorTab}
           textMode={textMode}
@@ -2387,6 +2474,7 @@ export function App() {
         onDiscard={discardJob}
         onResume={resumeJob}
       />
+      <UpdateToast busy={engineBusy} />
     </div>
   );
 }

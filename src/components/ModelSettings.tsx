@@ -136,7 +136,12 @@ export function ModelSettings({ active }: { active: boolean }) {
           )}
         </div>
         {download?.all && <Progress download={download} onCancel={() => abort.current?.abort()} />}
-        {lib.offline && <Hint>Sunucuya ulaşılamadı; indirme şu an yapılamaz, boyutlar eksik görünebilir.</Hint>}
+        {lib.offline && (
+          <Hint>
+            Çevrimdışı görünüyorsun (sunucuya ulaşılamadı); şu an yeni model indirilemez ama &ldquo;İndirildi&rdquo; olanlar internet
+            olmadan çalışır.
+          </Hint>
+        )}
         {error && <p className="m-0 text-[12px] text-mercan">{error}</p>}
       </div>
 

@@ -199,8 +199,9 @@ export class ModifiedBeamSearch implements Search {
   private async lmRootNode(): Promise<LmNode> {
     if (!this.lmRoot) {
       const lm = this.lm!.lm;
-      const out = await lm.step(this.cfg.lm.sosId, lm.zeroState(), lm.zeroState());
-      this.lmRoot = { parent: null, token: this.cfg.lm.sosId, out, pending: null };
+      const sosId = this.cfg.lm!.sosId;
+      const out = await lm.step(sosId, lm.zeroState(), lm.zeroState());
+      this.lmRoot = { parent: null, token: sosId, out, pending: null };
     }
     return this.lmRoot;
   }

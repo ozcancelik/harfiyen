@@ -144,7 +144,7 @@ export class RnnLm {
   constructor(
     private ort: Ort,
     private session: Session,
-    private cfg: ModelConfig["lm"],
+    private cfg: NonNullable<ModelConfig["lm"]>,
   ) {}
 
   zeroState(): Float32Array {

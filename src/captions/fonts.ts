@@ -25,6 +25,17 @@ import montserrat from "@fontsource-variable/montserrat/files/montserrat-latin-w
 import schibstedExt from "@fontsource-variable/schibsted-grotesk/files/schibsted-grotesk-latin-ext-wght-normal.woff2?url";
 import schibsted from "@fontsource-variable/schibsted-grotesk/files/schibsted-grotesk-latin-wght-normal.woff2?url";
 
+import interItalicExt from "@fontsource-variable/inter/files/inter-latin-ext-wght-italic.woff2?url";
+import interItalic from "@fontsource-variable/inter/files/inter-latin-wght-italic.woff2?url";
+import literataItalicExt from "@fontsource-variable/literata/files/literata-latin-ext-wght-italic.woff2?url";
+import literataItalic from "@fontsource-variable/literata/files/literata-latin-wght-italic.woff2?url";
+import montserratItalicExt from "@fontsource-variable/montserrat/files/montserrat-latin-ext-wght-italic.woff2?url";
+import montserratItalic from "@fontsource-variable/montserrat/files/montserrat-latin-wght-italic.woff2?url";
+import schibstedItalicExt from "@fontsource-variable/schibsted-grotesk/files/schibsted-grotesk-latin-ext-wght-italic.woff2?url";
+import schibstedItalic from "@fontsource-variable/schibsted-grotesk/files/schibsted-grotesk-latin-wght-italic.woff2?url";
+import poppinsItalicExt from "@fontsource/poppins/files/poppins-latin-ext-800-italic.woff2?url";
+import poppinsItalic from "@fontsource/poppins/files/poppins-latin-800-italic.woff2?url";
+
 export type BuiltinFontId =
   | "gsflex"
   | "montserrat"
@@ -47,6 +58,8 @@ export interface UserFont {
   data: ArrayBuffer;
   /** See CaptionFont.capsOnly; detected when the font is added. */
   capsOnly: boolean;
+  /** "min max" when the file is a variable font with a weight axis; missing otherwise (and in fonts added before this). */
+  weightRange?: string;
   /** Turkish letters the font lacks (they render in a fallback font). */
   missing: string;
   addedAt: number;
@@ -61,6 +74,8 @@ export interface CaptionFont {
   weightRange?: string;
   /** Bundled fonts: the [latin, latin-ext] files. */
   files?: string[];
+  /** The same files in italic, for the fonts that have a real italic; without them italics are slanted by the renderer. */
+  italicFiles?: string[];
   /** User fonts: the font file itself, at its default weight. */
   data?: ArrayBuffer;
   /** Lowercase letters are drawn as capitals, so a dotless "I" stands in for
@@ -71,15 +86,15 @@ export interface CaptionFont {
 
 export const FONTS: CaptionFont[] = [
   { id: "gsflex", label: "Google Sans Flex", weight: 760, weightRange: "1 1000", files: [gsflex, gsflexExt] },
-  { id: "montserrat", label: "Montserrat", weight: 800, weightRange: "100 900", files: [montserrat, montserratExt] },
-  { id: "poppins", label: "Poppins", weight: 800, weightRange: "800", files: [poppins, poppinsExt] },
-  { id: "inter", label: "Inter", weight: 650, weightRange: "100 900", files: [inter, interExt] },
+  { id: "montserrat", label: "Montserrat", weight: 800, weightRange: "100 900", files: [montserrat, montserratExt], italicFiles: [montserratItalic, montserratItalicExt] },
+  { id: "poppins", label: "Poppins", weight: 800, weightRange: "800", files: [poppins, poppinsExt], italicFiles: [poppinsItalic, poppinsItalicExt] },
+  { id: "inter", label: "Inter", weight: 650, weightRange: "100 900", files: [inter, interExt], italicFiles: [interItalic, interItalicExt] },
   { id: "anton", label: "Anton", weight: 400, weightRange: "400", files: [anton, antonExt] },
   { id: "bebas", label: "Bebas Neue", weight: 400, weightRange: "400", files: [bebas, bebasExt], capsOnly: true },
   { id: "bangers", label: "Bangers", weight: 400, weightRange: "400", files: [bangers, bangersExt], capsOnly: true },
   { id: "luckiest", label: "Luckiest Guy", weight: 400, weightRange: "400", files: [luckiest, luckiestExt], capsOnly: true },
-  { id: "schibsted", label: "Schibsted Grotesk", weight: 650, weightRange: "400 900", files: [schibsted, schibstedExt] },
-  { id: "literata", label: "Literata", weight: 600, weightRange: "200 900", files: [literata, literataExt] },
+  { id: "schibsted", label: "Schibsted Grotesk", weight: 650, weightRange: "400 900", files: [schibsted, schibstedExt], italicFiles: [schibstedItalic, schibstedItalicExt] },
+  { id: "literata", label: "Literata", weight: 600, weightRange: "200 900", files: [literata, literataExt], italicFiles: [literataItalic, literataItalicExt] },
 ];
 
 const userFonts = new Map<FontId, CaptionFont>();
@@ -88,7 +103,7 @@ export const isUserFont = (id: FontId): id is UserFontId => id.startsWith("user:
 
 /** Make a user font known (main thread from storage, the worker from its job). */
 export function addUserFont(u: UserFont) {
-  userFonts.set(u.id, { id: u.id, label: u.label, weight: 400, data: u.data, capsOnly: u.capsOnly });
+  userFonts.set(u.id, { id: u.id, label: u.label, weight: 400, weightRange: u.weightRange, data: u.data, capsOnly: u.capsOnly });
 }
 
 export const removeUserFont = (id: UserFontId) => userFonts.delete(id);
@@ -101,6 +116,24 @@ export const fontById = (id: FontId) => FONTS.find((f) => f.id === id) ?? userFo
 let userFontsReady: Promise<unknown> = Promise.resolve();
 /** Main thread: user fonts load from storage; loading one waits for that. */
 export const waitForUserFonts = (p: Promise<unknown>) => (userFontsReady = p);
+
+/** The weights a font can be set to (its variable axis), or null when it has just one. */
+export function weightBounds(f: CaptionFont): [number, number] | null {
+  const [lo, hi] = (f.weightRange ?? "").split(" ").map(Number);
+  return lo && hi && hi > lo ? [Math.max(100, lo), Math.min(900, hi)] : null;
+}
+
+/** The weight captions are drawn in: the one asked for if the font can do it, else its own. */
+export function captionWeight(f: CaptionFont, asked?: number): number {
+  const b = weightBounds(f);
+  return b && asked ? Math.min(b[1], Math.max(b[0], asked)) : f.weight;
+}
+
+/** CSS font shorthand for a caption font. Without a real italic file the text is upright here and slanted by the renderer. */
+export function captionCss(f: CaptionFont, px: number, o: { weight?: number; italic?: boolean } = {}): string {
+  const style = o.italic && f.italicFiles ? "italic " : "";
+  return `${style}${captionWeight(f, o.weight)} ${px}px ${captionStack(f.id)}`;
+}
 
 /** CSS family name the caption renderer uses for a font. */
 export const captionFamily = (id: FontId) => `Harfiyen Caption ${id}`;
@@ -117,33 +150,43 @@ const RANGES = [
   "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF",
 ];
 
-const loaded = new WeakMap<FontFaceSet, Map<FontId, Promise<void>>>();
+const loaded = new WeakMap<FontFaceSet, Map<string, Promise<void>>>();
 
-/** Register a caption font on a FontFaceSet (document.fonts or a worker's self.fonts). */
-export function loadCaptionFont(id: FontId, set: FontFaceSet): Promise<void> {
+/**
+ * Register a caption font on a FontFaceSet (document.fonts or a worker's self.fonts).
+ * `italic` also loads its italic files, for the fonts that have them.
+ */
+export function loadCaptionFont(id: FontId, set: FontFaceSet, italic = false): Promise<void> {
   let m = loaded.get(set);
   if (!m) loaded.set(set, (m = new Map()));
-  let p = m.get(id);
+  const f0 = fontById(id);
+  const withItalic = italic && !!f0.italicFiles;
+  const cacheKey = withItalic ? `${id}|italic` : id;
+  let p = m.get(cacheKey);
   if (!p) {
     p = (isUserFont(id) ? userFontsReady.catch(() => {}) : Promise.resolve()).then(async () => {
       const f = fontById(id);
-      if (f.id !== id) return loadCaptionFont(f.id, set); // Not here: its fallback.
+      if (f.id !== id) return loadCaptionFont(f.id, set, italic); // Not here: its fallback.
       if (f.data) {
-        const face = new FontFace(captionFamily(id), f.data);
+        const face = new FontFace(captionFamily(id), f.data, f.weightRange ? { weight: f.weightRange } : {});
         await Promise.all([face.load().then((x) => set.add(x)), loadCaptionFont(FALLBACK, set)]);
         return;
       }
-      await Promise.all(
-        f.files!.map(async (url, i) => {
+      const faces = (files: string[], style: "normal" | "italic") =>
+        files.map(async (url, i) => {
           const face = new FontFace(captionFamily(id), `url(${url})`, {
             weight: f.weightRange,
+            style,
             unicodeRange: RANGES[i],
           });
           set.add(await face.load());
-        }),
-      );
+        });
+      await Promise.all([
+        ...faces(f.files!, "normal"),
+        ...(withItalic ? faces(f.italicFiles!, "italic") : []),
+      ]);
     });
-    m.set(id, p);
+    m.set(cacheKey, p);
   }
   return p;
 }

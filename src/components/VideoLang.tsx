@@ -1,10 +1,13 @@
 import type { SpeechLang } from "../engine";
+import { MAIN_LANGS, SPEECH_LANGS } from "../engine/languages";
 import { LANG_NAMES } from "../lib/lang";
+import { OPT_NOTE, OPT_TITLE, Select, type Option } from "./Select";
 
-const LANGS: SpeechLang[] = ["tr", "en"];
-
-const BTN =
-  "h-6 rounded-[5px] border-0 bg-transparent px-2.5 text-[12px] font-medium text-fg-2 hover:not-disabled:not-aria-pressed:text-fg aria-pressed:bg-raised aria-pressed:text-fg-strong aria-pressed:shadow-[0_1px_3px_var(--shadow-pop)] disabled:opacity-45";
+const OPTIONS: Option<SpeechLang>[] = SPEECH_LANGS.map((l) => ({
+  value: l.code,
+  label: l.name,
+  group: MAIN_LANGS.includes(l.code) ? "Ana diller" : "Diğer diller",
+}));
 
 /** The language spoken in the media, chosen before transcribing. */
 export function VideoLang({
@@ -17,22 +20,21 @@ export function VideoLang({
   disabled?: boolean;
 }) {
   return (
-    <span className="flex items-center gap-2.5 text-[12px] text-fg-2">
-      Videodaki dil
-      <span className="flex gap-0.5 rounded-md border border-line-soft bg-well p-0.5" role="group" aria-label="Videodaki dil">
-        {LANGS.map((l) => (
-          <button
-            key={l}
-            type="button"
-            className={BTN}
-            aria-pressed={value === l}
-            disabled={disabled}
-            onClick={() => onChange(l)}
-          >
-            {LANG_NAMES[l]}
-          </button>
-        ))}
-      </span>
+    <span className="flex min-w-0 items-center gap-2.5 text-[12px] text-fg-2">
+      <span className="flex-none">Videodaki dil</span>
+      <Select<SpeechLang>
+        label="Videodaki dil"
+        value={value}
+        options={OPTIONS}
+        onChange={onChange}
+        disabled={disabled}
+        render={(o, inList) => (
+          <span className="flex min-w-0 items-baseline justify-between gap-3">
+            <span className={OPT_TITLE}>{o.label}</span>
+            {inList && !MAIN_LANGS.includes(o.value) && <span className={`${OPT_NOTE} flex-none`}>deneysel</span>}
+          </span>
+        )}
+      />
     </span>
   );
 }

@@ -21,7 +21,7 @@ const when = (t: number) =>
   });
 
 function note(p: Project) {
-  const parts = [when(p.updatedAt)];
+  const parts = [(p.lang ?? "tr").toUpperCase(), when(p.updatedAt)];
   if (p.duration) parts.push(fmtDuration(p.duration));
   if (p.storage === "none") parts.push("dosya yeniden seçilir");
   return parts.join(" · ");

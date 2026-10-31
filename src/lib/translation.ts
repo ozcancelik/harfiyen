@@ -3,9 +3,10 @@
 // share that span by length.
 
 import type { Word } from "../engine";
+import type { MtLang } from "../engine/languages";
 
-/** The language translated into: the transcript's other one. */
-export type TranslationLang = "en" | "tr";
+/** The language translated into. */
+export type TranslationLang = MtLang;
 
 export interface Translation {
   lang: TranslationLang;

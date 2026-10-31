@@ -11,6 +11,7 @@
 // faster, as far as the model allows, from the last back. What still runs over is reported, so a line can be
 // shortened.
 
+import type { MtLang } from "../engine/languages";
 import * as ort from "onnxruntime-web/webgpu";
 import ortWasmUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
 import ortMjsUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url";
@@ -20,7 +21,7 @@ import type { DubClip } from "../tts/dub";
 import { Ema, loadNormalizer, RATE, type EmaMeta } from "../tts/ema";
 import { Mini, type MiniManifest } from "../tts/mini";
 import { Supertonic, type SupertonicManifest } from "../tts/supertonic";
-import { fetchAll } from "./modelStore";
+import { fetchAll, fetchManifest } from "./modelStore";
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -30,11 +31,11 @@ export interface DubLine {
   text: string;
 }
 
-/** The text-to-speech models; Supertonic is the only one that reads English. */
+/** The text-to-speech models; Supertonic is the only one that reads a language other than Turkish. */
 export type VoiceModel = "ema" | "mini" | "ahenk" | "supertonic";
 
-/** The language the dub is read in: the transcript's, or its English translation. */
-export type DubLang = "tr" | "en";
+/** The language the dub is read in: the transcript's, or its translation. */
+export type DubLang = MtLang;
 
 export interface Voice {
   lang: DubLang;
@@ -102,9 +103,8 @@ let adapter: GPUAdapter | null | undefined;
 
 async function load(jobId: number, model: VoiceModel): Promise<Speaker> {
   const pack = VOICE_PACKS[model];
-  const res = await fetch(packFileUrl(pack, pack.manifest), { cache: "no-cache" });
-  if (!res.ok) throw new Error("Seslendirme modeli bulunamadı. Önce `npm run models` çalıştırılmalı.");
-  const meta = await res.json();
+  const { data: meta } = await fetchManifest<Record<string, any>>(packFileUrl(pack, pack.manifest));
+  if (!meta) throw new Error("Seslendirme modeli bulunamadı. Önce `npm run models` çalıştırılmalı.");
   const names = pack.files;
   const runtime = adapter === undefined ? [{ url: ortWasmUrl, size: ORT_WASM_SIZE, approx: true }] : [];
   const files = await fetchAll(
