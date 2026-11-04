@@ -91,6 +91,18 @@ const CACHE_NAME = ${JSON.stringify(cacheName)};
 const BUILD_ID = ${JSON.stringify(buildId)};
 const PRECACHE = ${JSON.stringify(urls)};
 
+// The files of this build, by the path a request has (percent-encoded as the browser sends it).
+const SHELL = new Set(PRECACHE.map((p) => new URL(p, self.location.origin).pathname));
+
+// Only the file that was asked for is kept: HTML for a page, anything but HTML otherwise. A host that answers a
+// path it does not have with the app's page (status 200) would otherwise leave that page cached as a script or
+// a manifest until the next build.
+function keep(res, path) {
+  if (!res.ok) return false;
+  const html = (res.headers.get("content-type") || "").includes("text/html");
+  return html === (path === "/" || path.endsWith(".html"));
+}
+
 function cleanResponse(res) {
   if (!res.redirected) return res;
   return new Response(res.body, {
@@ -108,7 +120,7 @@ self.addEventListener("install", (event) => {
         Promise.all(
           PRECACHE.map((url) =>
             fetch(url, { cache: "reload" })
-              .then((res) => (res.ok ? cache.put(url, cleanResponse(res)) : undefined))
+              .then((res) => (keep(res, url) ? cache.put(url, cleanResponse(res)) : undefined))
               .catch(() => undefined),
           ),
         ),
@@ -155,11 +167,10 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(req)
         .then(async (res) => {
-          if (res.ok) {
+          const key = req.mode === "navigate" ? "/index.html" : url.pathname;
+          if (keep(res, key)) {
             const cache = await caches.open(CACHE_NAME);
-            cache
-              .put(req.mode === "navigate" ? "/index.html" : url.pathname, cleanResponse(res.clone()))
-              .catch(() => {});
+            cache.put(key, cleanResponse(res.clone())).catch(() => {});
           }
           return res;
         })
@@ -175,13 +186,17 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Not a file of this build (an older build's chunk asked for by a tab still running it, say): straight to the
+  // network, and nothing is kept.
+  if (!SHELL.has(url.pathname)) return;
+
   // App shell assets (JS, workers, .mjs, CSS, fonts, icons): Cache-First.
   event.respondWith(
     caches.open(CACHE_NAME).then(async (cache) => {
       const hit = (await cache.match(url.pathname)) || (await cache.match(req));
       if (hit) return hit;
       const res = await fetch(req);
-      if (res.ok) cache.put(url.pathname, cleanResponse(res.clone())).catch(() => {});
+      if (keep(res, url.pathname)) cache.put(url.pathname, cleanResponse(res.clone())).catch(() => {});
       return res;
     }),
   );

@@ -165,9 +165,13 @@ export async function fetchManifest<T = unknown>(url: string): Promise<{ data: T
     const res = await fetch(full, { cache: "no-cache" });
     if (res.ok) {
       const clone = res.clone();
-      const data = (await res.json()) as T;
-      await cache?.put(full, clone).catch(() => {});
-      return { data, offline: false };
+      try {
+        const data = (await res.json()) as T;
+        await cache?.put(full, clone).catch(() => {});
+        return { data, offline: false };
+      } catch {
+        // Not JSON (a host's fallback page, say): not kept, and no sign of being offline. The cached copy below.
+      }
     }
   } catch {
     // Network unreachable: fall back to the cached copy below.
@@ -181,6 +185,8 @@ export async function fetchManifest<T = unknown>(url: string): Promise<{ data: T
   try {
     return { data: (await hit.json()) as T, offline };
   } catch {
+    // A copy that is not JSON was kept by mistake: dropped, so the next try reads the network.
+    await cache?.delete(full).catch(() => {});
     return { data: null, offline };
   }
 }
