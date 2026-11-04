@@ -51,7 +51,9 @@ import type { Transcript } from "./transcript";
 // stdout carries the protocol: anything printed there would corrupt it.
 console.log = console.error;
 
-const server = new McpServer({ name: "harfiyen", version: "0.1.0" });
+// The package's own version: package.json sits one level up from both src/server.ts and dist/server.js.
+const { version } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
+const server = new McpServer({ name: "harfiyen", version });
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
 const fail = (e: unknown) => ({ isError: true, content: [{ type: "text" as const, text: e instanceof Error ? e.message : String(e) }] });
