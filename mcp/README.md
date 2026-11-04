@@ -24,6 +24,12 @@ Transkriptler `~/.harfiyen-mcp/transcripts` altında saklanır (`HARFIYEN_MCP_HO
 Claude Code'a eklemek için:
 
 ```sh
+claude mcp add harfiyen -- npx -y harfiyen-mcp
+```
+
+Depodan çalıştırmak için (geliştirme):
+
+```sh
 claude mcp add harfiyen -- node --import tsx /yol/harfiyen/mcp/src/server.ts
 ```
 

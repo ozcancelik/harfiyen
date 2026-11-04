@@ -6,8 +6,9 @@
 // in the MCP's home folder; it is built again when anything under src/ or render-host/ changes.
 
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
-import { createServer, type Server } from "node:http";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { createServer, type Server, type ServerResponse } from "node:http";
+import { finished } from "node:stream/promises";
 import { homedir } from "node:os";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -116,8 +117,16 @@ export interface Inputs {
 
 const bytes = (f: Float32Array) => Buffer.from(f.buffer, f.byteOffset, f.byteLength);
 
+/** A file as the response; a read that fails ends the response, never the process. */
+const stream = (file: string, res: ServerResponse) =>
+  void createReadStream(file)
+    .on("error", () => res.destroy())
+    .pipe(res);
+
 /** Local server for the page and its inputs. Only this machine can reach it. */
-function serve(dir: string, inputs: Inputs): Promise<{ server: Server; url: string }> {
+async function serve(dir: string, inputs: Inputs): Promise<{ server: Server; url: string }> {
+  // Read here, where a missing file fails the render; inside a request it would take the process down.
+  const sourceSize = statSync(inputs.source).size;
   const server = createServer((req, res) => {
     const path = decodeURIComponent((req.url ?? "/").split("?")[0]);
     const send = (body: Buffer | undefined, type = "application/octet-stream") => {
@@ -125,8 +134,8 @@ function serve(dir: string, inputs: Inputs): Promise<{ server: Server; url: stri
       res.writeHead(200, { "Content-Type": type, "Content-Length": body.length }).end(body);
     };
     if (path === "/__source") {
-      res.writeHead(200, { "Content-Type": "video/mp4", "Content-Length": statSync(inputs.source).size });
-      return void createReadStream(inputs.source).pipe(res);
+      res.writeHead(200, { "Content-Type": "video/mp4", "Content-Length": sourceSize });
+      return stream(inputs.source, res);
     }
     if (path === "/__dub") return send(inputs.dub);
     if (path === "/__font") return send(inputs.font);
@@ -139,7 +148,7 @@ function serve(dir: string, inputs: Inputs): Promise<{ server: Server; url: stri
     if (!file.startsWith(dir + sep) && file !== dir) return void res.writeHead(403).end();
     if (!existsSync(file) || !statSync(file).isFile()) return void res.writeHead(404).end();
     res.writeHead(200, { "Content-Type": TYPES[extname(file)] ?? "application/octet-stream" });
-    createReadStream(file).pipe(res);
+    stream(file, res);
   });
   return new Promise((done, fail) => {
     server.once("error", fail);
@@ -160,10 +169,28 @@ export async function renderInChrome(job: BurnJob, inputs: Inputs, output: strin
   if (!chrome) throw new Error(missingChrome());
   const dir = await builtPage(progress);
   throwIfCancelled();
-  const { server, url } = await serve(dir, inputs);
+  // The output is opened before anything starts, so a path that cannot be written fails here, plainly. A write
+  // that fails later (a full disk) is kept and reported: a stream error without a listener would end the server.
   const part = `${output}.part`;
-  mkdirSync(dirname(output), { recursive: true });
-  const out = createWriteStream(part);
+  let fd: number;
+  try {
+    mkdirSync(dirname(output), { recursive: true });
+    fd = openSync(part, "w");
+  } catch (e) {
+    throw new Error(`Çıktı dosyası yazılamıyor (${output}): ${e instanceof Error ? e.message : e}`);
+  }
+  const out = createWriteStream(part, { fd });
+  let writeError: Error | null = null;
+  out.on("error", (e) => (writeError ??= e));
+  const drop = async () => {
+    out.destroy();
+    await finished(out).catch(() => {});
+    rmSync(part, { force: true });
+  };
+  const { server, url } = await serve(dir, inputs).catch(async (e) => {
+    await drop();
+    throw e;
+  });
   const darwin = process.platform === "darwin";
   const browser = await puppeteer
     .launch({
@@ -171,8 +198,9 @@ export async function renderInChrome(job: BurnJob, inputs: Inputs, output: strin
       headless: true,
       args: ["--enable-unsafe-webgpu", "--enable-gpu", "--ignore-gpu-blocklist", ...(darwin ? ["--use-angle=metal"] : [])],
     })
-    .catch((e) => {
+    .catch(async (e) => {
       server.close();
+      await drop();
       throw new Error(`Chrome açılamadı (${chrome}): ${e instanceof Error ? e.message : e}`);
     });
   const sig = signal();
@@ -189,7 +217,9 @@ export async function renderInChrome(job: BurnJob, inputs: Inputs, output: strin
     let shown = 0;
     let pageError = "";
     page.on("pageerror", (e) => (pageError = e instanceof Error ? e.message : String(e)));
-    await page.exposeFunction("harfiyenChunk", (b64: string) => void out.write(Buffer.from(b64, "base64")));
+    await page.exposeFunction("harfiyenChunk", (b64: string) => {
+      if (!writeError) out.write(Buffer.from(b64, "base64"));
+    });
     await page.exposeFunction("harfiyenProgress", (share: number) => {
       last = Date.now();
       if (share - shown >= 0.01) {
@@ -218,11 +248,17 @@ export async function renderInChrome(job: BurnJob, inputs: Inputs, output: strin
     }
   } finally {
     sig?.removeEventListener("abort", onAbort);
-    await new Promise<void>((done) => out.end(done));
+    // Settles on finish and on error alike, even when the stream already failed.
+    out.end();
+    await finished(out).catch(() => {});
     await browser.close().catch(() => {});
     server.close();
-    if (ok) renameSync(part, output);
+    // Set by the stream's listener, which the compiler does not follow.
+    const failed = writeError as Error | null;
+    if (ok && !failed) renameSync(part, output);
     else rmSync(part, { force: true });
+    // The video was drawn but not all of it reached the disk.
+    if (ok && failed) throw new Error(`Çıktı dosyası yazılamadı (${output}): ${failed.message}`);
   }
 }
 

@@ -1,8 +1,10 @@
 {
   "name": "harfiyen-mcp",
-  "private": true,
-  "version": "0.1.0",
+  "version": "0.0.1",
   "license": "MIT",
+  "author": "Özcan Çelik",
+  "repository": { "type": "git", "url": "git+https://github.com/ozcancelik/harfiyen.git", "directory": "mcp" },
+  "keywords": ["mcp", "transcription", "subtitles", "captions", "whisper", "turkish"],
   "type": "module",
   "description": "Harfiyen'in motorlarını MCP aracı olarak sunar: yazıya döküm, çeviri, konuşmacı ayırma, altyazılı video.",
   "bin": {
