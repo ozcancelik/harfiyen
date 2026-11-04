@@ -954,7 +954,8 @@ export function App() {
   useEffect(() => resetBurn(), [lang, resetBurn]);
 
   // Transcript edits, with undo (⌘Z / Ctrl+Z outside text fields). `en`: the edit was to the translation.
-  // `translation`: the translation as it was, when the edit moved it too (a shift of every caption).
+  // `translation`: the translation as it was, when the edit moved it too (a shift of every caption), or, with
+  // `en`, when a new translation replaced it (it may have been into another language).
   // An edit of who speaks keeps the speakers as they were instead.
   const history = useRef<
     (
@@ -1060,8 +1061,9 @@ export function App() {
     const prev = h.pop();
     if (prev && "speakers" in prev) {
       if (job) setSpeakers(job.id, prev.speakers);
-    } else if (prev?.en && job?.translation) {
-      setTranslation(job.id, { ...job.translation, words: prev.words });
+    } else if (prev?.en && job && (prev.translation ?? job.translation)) {
+      // A replaced translation comes back whole, language included; an edit only brings back its words.
+      setTranslation(job.id, prev.translation ?? { ...job.translation!, words: prev.words });
       setShowEn(true);
     } else if (prev && !prev.en) {
       setWords(prev.words);
@@ -1120,7 +1122,7 @@ export function App() {
     translator.translate(words, sourceLang, into, (t) => {
       // A new translation replaces any edits to the old one; ⌘Z brings them back.
       if (before) {
-        history.current.push({ jobId: id, en: true, words: before.words });
+        history.current.push({ jobId: id, en: true, words: before.words, translation: before });
         setCanUndo(true);
       }
       setTranslation(id, t);
