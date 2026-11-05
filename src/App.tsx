@@ -31,6 +31,7 @@ import {
 } from "./components/ProjectsMenu";
 import {
   IconGitHub,
+  IconStar,
   IconMic,
   IconMuted,
   IconOpen,
@@ -86,6 +87,7 @@ import {
 } from "./lib/projectStore";
 import { useBurner } from "./lib/useBurner";
 import { useTabProgress } from "./lib/useTabProgress";
+import { shortCount, useStars } from "./lib/useStars";
 import { useSourceInfo } from "./lib/useSourceInfo";
 import { useWaveform } from "./lib/useWaveform";
 import { useLogo } from "./lib/logo";
@@ -391,6 +393,7 @@ export function App() {
   const dubber = useDubber();
   const translator = useTranslator();
   const speakerTool = useSpeakers();
+  const stars = useStars("ozcancelik/harfiyen");
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("captions");
   const [customText, setCustomText] = useState("");
   const textRef = useRef<HTMLTextAreaElement>(null);
@@ -1894,9 +1897,20 @@ export function App() {
           href="https://github.com/ozcancelik/harfiyen"
           target="_blank"
           rel="noopener noreferrer"
-          title="Kaynak kodu GitHub'da"
+          title="GitHub'da yıldızla"
+          aria-label="GitHub'da yıldızla"
         >
-          <IconGitHub /> <TbLabel>GitHub</TbLabel>
+          <IconGitHub />{" "}
+          {stars !== null ? (
+            <TbLabel>
+              <span className="inline-flex items-center gap-1 tabular-nums">
+                <IconStar />
+                {shortCount(stars)}
+              </span>
+            </TbLabel>
+          ) : (
+            <TbLabel>GitHub</TbLabel>
+          )}
         </a>
         <div className="hidden max-[480px]:block">
           <MoreMenu

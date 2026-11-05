@@ -1,0 +1,26 @@
+# Harfiyen
+
+> Browser-based speech-to-text, translation, synthetic-voice dubbing and styled video captions, built first for Turkish. Audio and video are processed locally with WebGPU and never leave the user's computer. Open source (MIT). The interface is in Turkish.
+
+Harfiyen runs speech recognition models directly in the browser. The user loads a video or audio file (or speaks into the microphone), gets word-level timestamps, picks a caption style and exports a captioned video. There is no server-side processing of media and no account.
+
+## Try it
+
+- [harfiyen.dev](https://harfiyen.dev): the app, runs in a WebGPU-capable browser
+
+## Docs
+
+- [README](https://github.com/ozcancelik/harfiyen/blob/main/README.md): features, usage, supported formats and models (in Turkish)
+- [CHANGELOG](https://github.com/ozcancelik/harfiyen/blob/main/CHANGELOG.md): what changed in each release
+- [Deployment notes](https://github.com/ozcancelik/harfiyen/blob/main/docs/DEPLOY.md)
+
+## What it does
+
+- Transcription of MP4, MOV, MKV, WebM, MP3, M4A, WAV, FLAC and OGG files, or live from the microphone
+- Models: seda-v0.2 (Turkish only, WebGPU), Whisper large-v3 turbo (31 languages, higher accuracy), Duyu-small (Turkish, for devices without a GPU)
+- Translation between Turkish, English, German, French, Spanish and Russian, and dubbing with synthetic voices
+- Styled, karaoke-style captions burned into the exported video, with crop (e.g. vertical 9:16) and section selection
+
+## Source
+
+- [GitHub repository](https://github.com/ozcancelik/harfiyen): TypeScript and React, MIT license

@@ -164,6 +164,13 @@ export const IconGitHub = ({ size = 16 }: P) => (
   </svg>
 );
 
+/** An outlined star, for the GitHub star count. */
+export const IconStar = ({ size = 13 }: P) => (
+  <Svg size={size}>
+    <path d="M8 1.9l1.8 3.8 4.1.5-3 2.9.8 4.1L8 11.1l-3.7 2.1.8-4.1-3-2.9 4.1-.5z" />
+  </Svg>
+);
+
 /** Processor: a chip with pins. */
 export const IconCpu = (p: P) => (
   <Svg {...p}>
