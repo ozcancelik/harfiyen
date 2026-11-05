@@ -21,6 +21,7 @@ import {
   wordGap,
   wordsThrough,
 } from "../../src/lib/cuts";
+import { censorWords, clearBleeps, toggleWordsBleep, type Censor } from "../../src/lib/bleep";
 import { replaceRange } from "../../src/lib/edit";
 import { toJson, toSrt, toText, toVtt } from "../../src/lib/exporters";
 import { findMatches, replaceMatches } from "../../src/lib/find";
@@ -98,9 +99,11 @@ const summary = (t: Transcript) => {
   const cutCount = t.words.filter((w) => w.cut).length;
   const gapCount = t.words.filter((w) => w.cutGap).length;
   const cuts = cutCount || gapCount ? ` (${[cutCount && `${cutCount} kelime kesik`, gapCount && `${gapCount} boşluk kısaltıldı`].filter(Boolean).join(", ")})` : "";
+  const bleepCount = t.words.filter((w) => w.bleep).length;
+  const bleeps = bleepCount ? ` (${bleepCount} kelime bip'li)` : "";
   const span = t.range ? `  ${clock(t.range.start)}–${clock(t.range.end)}/${clock(t.duration)}` : `  ${clock(t.duration)}`;
   return (
-    `${t.id}  ${t.name}  ${words}${cuts}${span}  ${t.lang}${t.model ? `  ${t.model}` : ""}` +
+    `${t.id}  ${t.name}  ${words}${cuts}${bleeps}${span}  ${t.lang}${t.model ? `  ${t.model}` : ""}` +
     `${t.translation ? (stale(t) ? "  çeviri eski" : "  çeviri var") : ""}${t.speakers ? `  ${t.speakers.names.length} konuşmacı` : ""}`
   );
 };
@@ -123,7 +126,7 @@ function render(t: Transcript, format: "lines" | "text" | "srt" | "vtt" | "json"
             g >= 0.6 || w.cutGap !== undefined
               ? `${w.cutGap ? `[~⏸ ${g.toFixed(1)}s~] ` : `[⏸ ${g.toFixed(1)}s] `}`
               : "";
-          const wordText = w.cut ? `~${w.text}~` : w.text;
+          const wordText = w.cut ? `~${w.text}~` : w.bleep ? `♪${w.text}♪` : w.text;
           return `${gapNote}${wordText}`;
         });
         return `[${c.first}..${c.first + c.words.length - 1}] ${clock(c.start)} ${textParts.join(" ")}`;
@@ -135,16 +138,19 @@ function render(t: Transcript, format: "lines" | "text" | "srt" | "vtt" | "json"
   const cuts = hasCuts ? findCuts(t.words, span, { ...DEFAULT_JUMP_CUT, on: false }, new Float32Array(0)) : [];
   const words = cuts.length ? wordsThrough(all, span, cuts) : wordsIn(all, range, true);
   const duration = cuts.length ? keptLength(keptParts(span, cuts)) : range ? range.end - range.start : t.duration;
-  const cues = () => importedCues(words) ?? buildCues(words, SUBTITLE_RULES);
+  // Bleeped words come out as the project's captions show them (stars unless it says otherwise); the translation has no flags.
+  const censor = ((t.app?.settings as { censor?: Censor } | undefined)?.censor ?? "stars") as Censor;
+  const shown = language === "translation" ? words : censorWords(words, censor, false);
+  const cues = () => importedCues(shown) ?? buildCues(shown, SUBTITLE_RULES);
   switch (format) {
     case "srt":
       return toSrt(cues(), names);
     case "vtt":
       return toVtt(cues(), names);
     case "text":
-      return toText(words, names);
+      return toText(shown, names);
     case "json":
-      return toJson(words, { id: t.id, name: t.name, lang: language === "translation" ? t.translation?.lang : t.lang, duration }, names);
+      return toJson(shown, { id: t.id, name: t.name, lang: language === "translation" ? t.translation?.lang : t.lang, duration }, names);
   }
 }
 
@@ -665,6 +671,73 @@ server.registerTool(
 );
 
 server.registerTool(
+  "bleep_words",
+  {
+    title: "Kelime bip'le (sansür)",
+    description:
+      "Seçilen kelimelerin sesini bip sesiyle değiştirir (konuşma bip'in altında karışmaz, tamamen gider). Kelimeler transkriptte durur, bip'li olarak işaretlenir (get_transcript lines çıktısında ♪kelime♪); render_captions sesi bip'ler, altyazıda da kelimeyi gizler (censor ile yıldız, mozaik, bant, gizle ya da açık). export_transcript çıktıları (srt, vtt, text, json) da maskelenir.\n" +
+      "- mode='add': ranges (kelime sırası ya da zaman) ve/ya da words (kelime metni; bütün transkriptte eşleşenler) bip'lenir.\n" +
+      "- mode='remove': aynı seçimdeki bip'ler kaldırılır.\n" +
+      "- mode='reset': bütün bip'ler kaldırılır.\n" +
+      "Kesik (cut_words) kelimeler zaten videoda yok, bip'lenmez. Bip yalnızca özgün sesi değiştirir; çeviri altyazısında kelimeler eşlenmediği için maskeleme yapılmaz. undo ile geri alınır.",
+    inputSchema: {
+      id: z.string(),
+      mode: z.enum(["add", "remove", "reset"]).default("add"),
+      ranges: z.array(CutRangeSchema).optional().describe("Bip'lenecek kelime/zaman aralıkları"),
+      words: z.array(z.string()).optional().describe("Bu metinlerle eşleşen her kelime (büyük/küçük harf ve Türkçe harf farkına bakmaz); birden çok kelimelik ifade de olur"),
+      whole_word: z.boolean().default(true).describe("words için yalnızca tam kelime eşleşsin (false: kelimenin içinde geçmesi de yeter)"),
+    },
+  },
+  async (a) => {
+    try {
+      const t = store.load(a.id);
+      if (!t.words.length) throw new Error("Transkriptte kelime yok.");
+      if (a.mode === "reset") {
+        store.checkpoint(t, "bleep_words (sıfırla)");
+        t.words = clearBleeps(t.words);
+        store.save(t);
+        return text(`Tüm bip'ler kaldırıldı.\n${summary(t)}`);
+      }
+      const picked = new Set<number>();
+      for (const r of a.ranges ?? []) {
+        if (r.first !== undefined) {
+          const last = r.last ?? (r.count !== undefined ? r.first + r.count - 1 : r.first);
+          if (r.first >= t.words.length || last >= t.words.length || last < r.first) {
+            throw new Error(`Kelime aralığı ${r.first}..${last} geçersiz (0..${t.words.length - 1}).`);
+          }
+          for (let i = r.first; i <= last; i++) picked.add(i);
+        } else if (r.start !== undefined && r.end !== undefined && r.end > r.start) {
+          t.words.forEach((w, i) => {
+            if (w.end > r.start! && w.start < r.end!) picked.add(i);
+          });
+        } else {
+          throw new Error("Her aralıkta (first, last/count) ya da (start, end) verilmeli.");
+        }
+      }
+      const missing: string[] = [];
+      for (const q of a.words ?? []) {
+        const found = findMatches(t.words, q, a.whole_word, t.lang);
+        if (!found.length) missing.push(q);
+        for (const m of found) for (let i = m.first; i <= m.last; i++) picked.add(i);
+      }
+      if (!picked.size) throw new Error(`Bip'lenecek kelime seçilmedi${missing.length ? ` ("${missing.join('", "')}" bulunamadı)` : ""}; ranges ya da words verilmeli.`);
+      store.checkpoint(t, `bleep_words (${a.mode})`);
+      t.words = toggleWordsBleep(t.words, [...picked], a.mode === "add");
+      store.save(t);
+      const list = [...picked].sort((x, y) => x - y).slice(0, 20).map((i) => `[${i}] ${t.words[i].text}`).join(", ");
+      const more = picked.size > 20 ? ` … (+${picked.size - 20})` : "";
+      const cutNote = [...picked].some((i) => t.words[i].cut) ? "\nNot: Seçilenlerin bir kısmı kesik (cut_words); videoda olmadıkları için bip duyulmaz." : "";
+      return text(
+        `${picked.size} kelime ${a.mode === "add" ? "bip'lendi" : "bip'ten çıkarıldı"}: ${list}${more}` +
+          `${missing.length ? `\nBulunamadı: ${missing.join(", ")}` : ""}${cutNote}\n${summary(t)}`,
+      );
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
   "find_replace",
   {
     title: "Bul ve değiştir",
@@ -917,6 +990,7 @@ server.registerTool(
       color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
       accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Vurgu rengi (karaoke dolgusu, vurgu kutusu)"),
       speaker_names: z.boolean().optional().describe("Konuşan değişince adı yazılsın (varsayılan: proje ne diyorsa, yoksa açık)"),
+      censor: z.enum(["stars", "blur", "bar", "hide", "off"]).optional().describe("bleep_words ile bip'lenen kelime altyazıda nasıl görünsün: stars yıldız (s****), blur mozaik, bar bant, hide hiç yazma, off olduğu gibi yaz (yalnızca ses bip'lenir). blur ve bar yalnızca Chrome yolunda çizilir (ffmpeg'de ve kinetik tipografide yıldız olur). Varsayılan: proje ne diyorsa, yoksa stars"),
       aspect: z.enum(["9:16", "4:5", "1:1", "16:9"]).optional().describe("Kadraj; verilirse projenin kırpma kutusu yok sayılır ve crop_position konumundan kırpılır"),
       crop_position: z.enum(["orta", "sol", "sag", "ust", "alt"]).optional().describe("fill modunda kırpma kutusunun konumu: orta (varsayılan), sol, sag, ust, alt"),
       fit: z.enum(["fill", "fit"]).optional().describe("fill: kareyi kapla, taşanı kes; fit: tamamı görünsün, boşluk siyah ya da bulanık"),
@@ -972,6 +1046,7 @@ server.registerTool(
         hidden,
         emphasis: a.emphasis ?? look.emphasis ?? false,
         speakerNames: a.speaker_names ?? look.speakerNames,
+        censor: a.censor ?? look.censor,
         fontFile: a.font_file ? abs(a.font_file) : undefined,
         aspect: a.aspect ?? look.aspect,
         cropPosition: a.crop_position,
@@ -1045,6 +1120,7 @@ server.registerTool(
         ...(a.uppercase !== undefined && { uppercase: a.uppercase }),
         ...(a.text_background && { background: a.text_background }),
         ...(a.speaker_names !== undefined && { speakerNames: a.speaker_names }),
+        ...(a.censor !== undefined && { censor: a.censor }),
         ...(a.aura && { aura: a.aura }),
         ...(a.aura_style && { auraStyle: a.aura_style }),
       };

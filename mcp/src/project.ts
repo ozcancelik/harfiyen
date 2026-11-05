@@ -47,6 +47,7 @@ function readWords(list: unknown): Word[] {
         ...(w.cue === true && { cue: true }),
         ...(typeof w.cut === "boolean" && { cut: w.cut }),
         ...(typeof w.cutGap === "boolean" && { cutGap: w.cutGap }),
+        ...(w.bleep === true && { bleep: true as const }),
       }),
     );
 }
@@ -148,6 +149,7 @@ export function writeProject(t: Transcript, wave?: Waveform): string {
       ...(w.cue && { cue: true }),
       ...(typeof w.cut === "boolean" && { cut: w.cut }),
       ...(typeof w.cutGap === "boolean" && { cutGap: w.cutGap }),
+      ...(w.bleep && { bleep: true as const }),
     })),
     ...(t.translation && {
       translation: {

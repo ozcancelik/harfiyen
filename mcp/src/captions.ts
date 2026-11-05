@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Word } from "../../src/engine";
 import { buildCues, SUBTITLE_RULES } from "../../src/lib/cues";
+import { BLEEP_HZ, BLEEP_LEVEL, bleepRanges, censorWords, type Censor } from "../../src/lib/bleep";
 import { keptLength, keptParts, wordsThrough, type Kept } from "../../src/lib/cuts";
 import { loudWords } from "../../src/captions/emphasis";
 import { labelWords } from "../../src/lib/speakers";
@@ -247,6 +248,8 @@ export interface RenderOptions {
   cropPosition?: CropPosition;
   /** Names of the speakers above their lines; false leaves them out. */
   speakerNames?: boolean;
+  /** What a bleeped word looks like in the captions (stars, bar and mosaic come out as stars here). Missing: stars. */
+  censor?: Censor;
   /** Leave captions out of the video (a dub-only or jump-cut video). */
   hidden?: boolean;
   /** Takes quiet stretches out of the video. */
@@ -306,9 +309,22 @@ function geometry(srcW: number, srcH: number, o: RenderOptions): Geometry {
 
 /** Filter graph pieces: the kept parts joined, then the picture shaped, then captions. */
 /** `mix`: the dub is input `index`; the file's own sound stays at `original` (0 to 1) under it. */
-function graph(parts: Kept[], hasVideo: boolean, g: Geometry, out: { w: number; h: number }, o: RenderOptions, ass: string, fonts: string, mix?: { index: number; original: number }) {
+function graph(parts: Kept[], hasVideo: boolean, g: Geometry, out: { w: number; h: number }, o: RenderOptions, ass: string, fonts: string, mix?: { index: number; original: number }, bleeps: { start: number; end: number }[] = []) {
   const { size } = g;
   const pieces: string[] = [];
+  // The file's sound with the bleeped stretches silenced and a tone put over them (file time, so before any cut).
+  let audio = "[0:a]";
+  if (bleeps.length) {
+    const on = bleeps.map((r) => `between(t,${r.start.toFixed(3)},${r.end.toFixed(3)})`).join("+");
+    const end = Math.ceil(bleeps[bleeps.length - 1].end + 1);
+    const tone = `${BLEEP_LEVEL}*sin(2*PI*${BLEEP_HZ}*t)*gt(${on},0)`;
+    pieces.push(
+      `[0:a]aresample=48000,aformat=channel_layouts=stereo,volume=0:enable='gt(${on},0)'[aq]`,
+      `aevalsrc='${tone}|${tone}':channel_layout=stereo:sample_rate=48000:duration=${end}[tone]`,
+      `[aq][tone]amix=inputs=2:duration=first:normalize=0[ab]`,
+    );
+    audio = "[ab]";
+  }
   const joined: string[] = [];
   parts.forEach((p, i) => {
     const t = `start=${p.start.toFixed(3)}:end=${p.end.toFixed(3)}`;
@@ -319,7 +335,7 @@ function graph(parts: Kept[], hasVideo: boolean, g: Geometry, out: { w: number; 
     const len = Math.max(0, p.end - p.start);
     const fadeIn = i > 0 && len > 0.03 ? ",afade=t=in:st=0:d=0.012" : "";
     const fadeOut = i < parts.length - 1 && len > 0.03 ? `,afade=t=out:st=${Math.max(0, len - 0.012).toFixed(3)}:d=0.012` : "";
-    pieces.push(`[0:a]atrim=${t},asetpts=PTS-STARTPTS${fadeIn}${fadeOut}[a${i}]`);
+    pieces.push(`${audio}atrim=${t},asetpts=PTS-STARTPTS${fadeIn}${fadeOut}[a${i}]`);
     joined.push(`[a${i}]`);
     if (mix) pieces.push(`[${mix.index}:a]atrim=${t},asetpts=PTS-STARTPTS[d${i}]`);
   });
@@ -414,6 +430,7 @@ export async function renderCaptions(
   const cuts = o.jumpCut ? await planCuts(t, o.jumpCut, keep) : hasManualCuts ? await planCuts(t, { on: false }, keep) : [];
   const parts = keptParts(span, cuts);
   if (!parts.length) throw new Error("Kesimlerden sonra videoda bir şey kalmıyor.");
+  const bleeps = bleepRanges(t.words).filter((r) => r.end > span.start && r.start < span.end);
   const length = keptLength(parts);
 
   const src = info.hasVideo ? { w: info.width, h: info.height } : { w: 1920, h: 1080 };
@@ -440,10 +457,10 @@ export async function renderCaptions(
         const loud = loudWords(words, await loudnessOf(t.source, span.end));
         marked = words.map((x) => (loud.has(x) ? { ...x, loud: true as const } : x));
       }
-      writeFileSync(ass, toAss(wordsThrough(marked, span, cuts) as CaptionWord[], o.speakerNames === false ? undefined : t.speakers?.names, out.w, out.h, style));
+      writeFileSync(ass, toAss(censorWords(wordsThrough(marked, span, cuts), o.censor ?? "stars", false) as CaptionWord[], o.speakerNames === false ? undefined : t.speakers?.names, out.w, out.h, style));
     }
     const mix = dub ? { index: info.hasVideo ? 1 : 2, original: Math.min(0.5, Math.max(0, o.original ?? 0)) } : undefined;
-    const filter = graph(parts, info.hasVideo, g, out, o, ass, fonts, mix);
+    const filter = graph(parts, info.hasVideo, g, out, o, ass, fonts, mix, bleeps);
     const script = join(dir, "graph.txt");
     // A jump cut is a filter per part: long graphs go in a file, not on the command line.
     const filterArgs = filter.length > 20_000 ? (writeFileSync(script, filter), ["-/filter_complex", script]) : ["-filter_complex", filter];

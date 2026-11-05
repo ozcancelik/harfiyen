@@ -14,6 +14,8 @@ export interface Look {
   hidden?: boolean;
   emphasis?: boolean;
   speakerNames?: boolean;
+  /** What a bleeped word looks like in the captions. */
+  censor?: "stars" | "blur" | "bar" | "hide" | "off";
   logo?: Partial<LogoSettings> & { on: boolean };
   photo?: boolean;
   photoBlur?: boolean;
@@ -110,6 +112,7 @@ export function lookOf(app: Record<string, unknown> | undefined): Look {
     }
     if (typeof s.voiceEmphasis === "boolean") look.emphasis = s.voiceEmphasis;
     if (typeof s.speakerNames === "boolean") look.speakerNames = s.speakerNames;
+    if (s.censor === "stars" || s.censor === "blur" || s.censor === "bar" || s.censor === "hide" || s.censor === "off") look.censor = s.censor;
     if (k?.on === true) look.chromeOnly.push({ why: "kinetik tipografi", note: "Projede kinetik tipografi açık; Chrome olmadan çizilemez, altyazı stiliyle yazıldı." });
     if (s.hidden === true) {
       look.hidden = true;

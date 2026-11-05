@@ -7,6 +7,7 @@ import { basename, extname } from "node:path";
 import type { Corner } from "../../src/captions/style";
 import type { Word } from "../../src/engine";
 import { cropFor, framing, RATIO, type Crop } from "../../src/lib/crop";
+import { bleepRanges, censorWords, type Censor } from "../../src/lib/bleep";
 import { keptLength, keptParts, wordsOutside } from "../../src/lib/cuts";
 import { labelWords } from "../../src/lib/speakers";
 import { wordsIn } from "../../src/lib/trim";
@@ -191,7 +192,13 @@ export async function renderChrome(
   const hevc = o.codec === "hevc";
   const names = o.speakerNames === false ? null : (t.speakers?.names ?? null);
   // Only the trimmed part's words (less cut fillers), so no caption line reaches outside it.
-  const shownWords = wordsOutside(wordsIn(words, t.range ?? null), cuts);
+  // Bleeped words: stars, mosaic, bar, left out or shown as they are. The kinetic stage has no mosaic or bar, so stars there.
+  const asked = (c.patch.censor ?? (c.settings as { censor?: unknown } | undefined)?.censor) as Censor | undefined;
+  const censor: Censor = asked && ["stars", "blur", "bar", "hide", "off"].includes(asked) ? asked : "stars";
+  const drawnCensor: Censor = kineticOn && (censor === "blur" || censor === "bar") ? "stars" : censor;
+  const shownWords = censorWords(wordsOutside(wordsIn(words, t.range ?? null), cuts), drawnCensor);
+  // The file's own sound, in file time: the voice is replaced by the tone there (before the dub goes over it).
+  const bleeps = bleepRanges(t.words).filter((r) => r.end > span.start && r.start < span.end);
   const job = (encoder: Encode["encoder"]): BurnJob => ({
     words: shownWords,
     settings: c.settings as BurnJob["settings"],
@@ -215,6 +222,7 @@ export async function renderChrome(
       fit: frame.fit,
       trim: t.range ? { start: span.start, end: span.end } : null,
       cuts: cuts.length ? cuts : null,
+      bleeps: bleeps.length ? bleeps : null,
     },
   });
 
