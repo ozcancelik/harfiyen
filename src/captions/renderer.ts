@@ -138,6 +138,52 @@ export class CaptionRenderer {
     return { ...this.cached, scale };
   }
 
+  /** A mosaic or a bar over the word's place: from `tx` on, `w` wide, centred on `cy`; `seed` sets the mosaic's tones. */
+  private censorWord(
+    ctx: OffscreenCanvasRenderingContext2D,
+    mode: "blur" | "bar",
+    seed: number,
+    tx: number,
+    cy: number,
+    w: number,
+    lh: number,
+    px: number,
+  ) {
+    const padX = px * 0.08;
+    const h = lh * 0.78;
+    ctx.beginPath();
+    ctx.roundRect(tx - padX, cy - h / 2, w + padX * 2, h, h * 0.3);
+    if (mode === "bar") {
+      ctx.fillStyle = "#0b0f14";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+      ctx.lineWidth = Math.max(1, px * 0.03);
+      ctx.stroke();
+      return;
+    }
+    // Mosaic: square blocks of greys across the word's place, about a quarter of a letter's height. Their tones
+    // come from a hash of the block's place and the word's, so they hold still from frame to frame.
+    const cell = Math.max(2, Math.round(px * 0.17));
+    const x0 = tx - padX;
+    const y0 = cy - h / 2;
+    const cols = Math.max(1, Math.round((w + padX * 2) / cell));
+    const rows = Math.max(1, Math.round(h / cell));
+    const bw = (w + padX * 2) / cols;
+    const bh = h / rows;
+    ctx.save();
+    ctx.clip();
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        let n = Math.imul(c + 1, 73856093) ^ Math.imul(r + 1, 19349663) ^ Math.imul(seed + 1, 83492791);
+        n = Math.imul(n ^ (n >>> 13), 1274126177);
+        const v = 70 + ((n ^ (n >>> 16)) & 0xff) * 0.55;
+        ctx.fillStyle = `rgb(${v | 0}, ${(v + 4) | 0}, ${(v + 10) | 0})`;
+        ctx.fillRect(x0 + c * bw, y0 + r * bh, bw + 0.5, bh + 0.5);
+      }
+    }
+    ctx.restore();
+  }
+
   private groupAt(t: number): number {
     const gs = this.groups;
     let lo = 0;
@@ -314,6 +360,13 @@ export class CaptionRenderer {
         const tx = x + wordPad;
         const ty = cy + (capH * size[i]) / 2;
         const boxed = preset.effect === "box" && isActive;
+        if (g.words[i].bleep && (s.censor === "blur" || s.censor === "bar")) {
+          // The word is not drawn: a mosaic or a bar in its place (the text is only a stand-in for its width).
+          this.censorWord(ctx, s.censor, Math.round(g.words[i].start * 1000), tx, cy, widths[i], lh, px * size[i]);
+          ctx.restore();
+          x += widths[i] + wordPad * 2 + space;
+          continue;
+        }
         if (slant) {
           // Leaning about the baseline, and moved back so the word stays centred where it was.
           ctx.translate((-SLANT * capH * size[i]) / 2, ty);

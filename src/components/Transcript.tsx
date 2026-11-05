@@ -5,7 +5,7 @@ import { DEFAULT_JUMP_CUT, isFiller, isGapCut, isWordCut, wordGap, type JumpCut 
 import type { Match } from "../lib/find";
 import { clock, duration as fmtDuration } from "../lib/format";
 import { speakerColor } from "../lib/speakers";
-import { IconCheck, IconClock, IconEdit, IconScissors, IconSpeaker, IconTrash, IconUndo } from "./icons";
+import { IconBleep, IconCheck, IconClock, IconEdit, IconScissors, IconSpeaker, IconTrash, IconUndo } from "./icons";
 import { Menu, MenuGroup, MenuItem, MenuTitle } from "./Menu";
 import { TimingEditor } from "./TimingEditor";
 import { EmptyNote, IconButton } from "./ui";
@@ -39,6 +39,10 @@ interface Props {
   onToggleGap?: (index: number, force?: boolean) => void;
   onToggleAllFillers?: () => void;
   onToggleAllGaps?: () => void;
+  /** Bleeps (censors) the words at `indices`, or takes the bleep off (toggles when `force` is omitted). */
+  onToggleBleep?: (indices: number[], force?: boolean) => void;
+  /** Takes the bleep off every word. */
+  onClearBleeps?: () => void;
   cutSummary?: { count: number; before: number; after: number } | null;
 }
 
@@ -338,7 +342,9 @@ const CueRow = memo(function CueRow({
                     onWordClick(idx, w.start);
                   }}
                   title={
-                    wordCut
+                    w.bleep && !wordCut
+                      ? "Bip'lendi · kaldırmak için seç ve B'ye bas"
+                      : wordCut
                       ? "Kesildi · geri getirmek için tıkla (o ana gitmek için Shift+tıkla)"
                       : cutMode
                         ? "Videodan kesmek için tıkla veya sürükle"
@@ -349,7 +355,9 @@ const CueRow = memo(function CueRow({
                   className={`-mx-px inline-block cursor-pointer rounded-[4px] px-[3px] py-px transition-[background,color,opacity] duration-150 ease-[ease] hover:bg-raised motion-reduce:transition-none ${
                     i === active && !wordCut
                       ? "bg-cini font-[550] text-white shadow-[0_1px_4px_rgba(71,109,230,0.4)]"
-                      : wordCut
+                      : w.bleep && !wordCut
+                        ? "bg-orange-500/15 text-orange-300 light:text-orange-700 underline decoration-orange-400/80 decoration-wavy underline-offset-[3.5px]"
+                        : wordCut
                         ? "text-fg-3/45 line-through decoration-fg-3/75 hover:text-fg-2"
                         : marks[i] === "2"
                           ? "bg-[#e8b54a] text-[#1a1408]"
@@ -471,6 +479,8 @@ export function Transcript({
   onToggleGap,
   onToggleAllFillers,
   onToggleAllGaps,
+  onToggleBleep,
+  onClearBleeps,
   cutSummary,
 }: Props) {
   // The playhead for "Şu an" buttons, without re-rendering rows as it moves.
@@ -532,7 +542,7 @@ export function Transcript({
   // Track native text selection across words inside the transcript list.
   const list = useRef<HTMLOListElement>(null);
   useEffect(() => {
-    if (!onToggleWords) return;
+    if (!onToggleWords && !onToggleBleep) return;
     const onSelect = () => {
       const sel = window.getSelection();
       const root = list.current;
@@ -551,7 +561,27 @@ export function Transcript({
     };
     document.addEventListener("selectionchange", onSelect);
     return () => document.removeEventListener("selectionchange", onSelect);
-  }, [onToggleWords]);
+  }, [onToggleWords, onToggleBleep]);
+
+  // B bleeps (or un-bleeps) the selected word or range of words.
+  useEffect(() => {
+    if (!onToggleBleep || !selection) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "b" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      e.preventDefault();
+      const [a, b] = selection;
+      const indices: number[] = [];
+      for (let i = a; i <= b; i++) if (i >= 0 && i < words.length) indices.push(i);
+      if (indices.length) {
+        onToggleBleep(indices);
+        window.getSelection()?.removeAllRanges();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onToggleBleep, selection, words.length]);
 
   // Delete / Backspace cuts (or restores) the selected word or range of words.
   useEffect(() => {
@@ -592,6 +622,7 @@ export function Transcript({
     }
     return { fillersTotal, fillersCut, gapsTotal, gapsCut };
   }, [words, jumpCut, spanStart]);
+  const bleepCount = useMemo(() => words.reduce((n, w) => n + (w.bleep ? 1 : 0), 0), [words]);
 
   // Per cue, a string of find marks (see CueRow); "" where nothing is marked.
   const marks = useMemo(() => {
@@ -673,16 +704,21 @@ export function Transcript({
     selection !== null &&
     selCount > 0 &&
     Array.from({ length: selCount }, (_, k) => selection[0] + k).every((idx) => words[idx] && isWordCut(words[idx], jumpCut));
+  const selAllBleep =
+    selection !== null &&
+    selCount > 0 &&
+    Array.from({ length: selCount }, (_, k) => selection[0] + k).every((idx) => words[idx]?.bleep);
   const savedSec = cutSummary ? Math.max(0, cutSummary.before - cutSummary.after) : 0;
 
   return (
     <div>
-      {onToggleWords && !running && words.length > 0 && (
+      {(onToggleWords || onToggleBleep) && !running && words.length > 0 && (
         <div
           className="sticky top-0 z-10 flex flex-wrap items-center gap-1.5 border-b border-line-soft bg-pane/95 px-3 py-1.5 backdrop-blur-md"
           role="toolbar"
           aria-label="Metinden kurgu araçları"
         >
+          {onToggleWords && (
           <button
             type="button"
             aria-pressed={cutMode}
@@ -701,8 +737,9 @@ export function Transcript({
             <IconScissors size={12} />
             <span>Kurgu</span>
           </button>
+          )}
 
-          {selection && !cutMode && (
+          {selection && !cutMode && onToggleWords && (
             <button
               type="button"
               onClick={() => {
@@ -723,6 +760,42 @@ export function Transcript({
                     ? `${selCount} kelimeyi kes`
                     : "Kelimeyi kes"}
               </span>
+            </button>
+          )}
+
+          {selection && !cutMode && onToggleBleep && (
+            <button
+              type="button"
+              onClick={() => {
+                const indices = Array.from({ length: selCount }, (_, k) => selection[0] + k);
+                onToggleBleep(indices);
+                window.getSelection()?.removeAllRanges();
+              }}
+              title="Seçili kelimeleri bip sesiyle değiştir veya bip'i kaldır (B)"
+              className={`${CHIP_BTN} border-orange-400/45 bg-orange-500/12 text-orange-300 light:text-orange-700 hover:bg-orange-500/20`}
+            >
+              <IconBleep size={12} />
+              <span>
+                {selAllBleep
+                  ? selCount > 1
+                    ? `${selCount} kelimenin bip'ini kaldır`
+                    : "Bip'i kaldır"
+                  : selCount > 1
+                    ? `${selCount} kelimeyi bip'le`
+                    : "Kelimeyi bip'le"}
+              </span>
+            </button>
+          )}
+
+          {bleepCount > 0 && onClearBleeps && (
+            <button
+              type="button"
+              onClick={onClearBleeps}
+              title="Tüm bip'leri kaldır"
+              className={`${CHIP_BTN} border-line bg-well text-fg-2 hover:border-line-strong hover:bg-raised hover:text-fg`}
+            >
+              <IconBleep size={12} />
+              <span>{bleepCount} bip · temizle</span>
             </button>
           )}
 

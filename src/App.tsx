@@ -98,6 +98,12 @@ import type { LogoLayer } from "./render/logoLayer";
 import { framing, type Crop } from "./lib/crop";
 import { wordsIn } from "./lib/trim";
 import {
+  bleepRanges,
+  censorWords,
+  clearBleeps,
+  toggleWordsBleep,
+} from "./lib/bleep";
+import {
   DEFAULT_JUMP_CUT,
   findCuts,
   hasActiveCuts,
@@ -461,10 +467,13 @@ export function App() {
         : NO_CUTS,
     [jumpCut, jumpCutUnavailable, job?.words, job?.loudness, span, dubSpans],
   );
+  /** The stretches of the file's sound that are bleeped (censored words), always the spoken words'. */
+  const bleeps = useMemo(() => bleepRanges(job?.words ?? []), [job?.words]);
   const player = usePlayer(
     job?.file ?? null,
     trimming ? trimDraft : trim,
     trimming ? NO_CUTS : cuts,
+    bleeps,
   );
   const following = useFollow(player, job);
   useTabProgress(
@@ -944,15 +953,29 @@ export function App() {
   const dubTimed =
     dubbing && !dubStale && dubbing.voice.lang === lang ? dubbing.timed : null;
   /** What the player, the timeline and the exports caption with. */
+  /** What a bleeped word looks like in the captions; the kinetic stage has no mosaic or bar, so stars there. */
+  const censor = settings.censor ?? "stars";
+  const drawnCensor =
+    settings.kinetic?.on && (censor === "blur" || censor === "bar")
+      ? "stars"
+      : censor;
+  const bleepCount = useMemo(
+    () => words.reduce((n, w) => n + (w.bleep ? 1 : 0), 0),
+    [words],
+  );
   /** A filler the jump cut takes out is not captioned either. */
   const captionWords = useMemo(
-    () => wordsOutside(dubTimed ?? liveWords, cuts),
-    [dubTimed, liveWords, cuts],
+    () => censorWords(wordsOutside(dubTimed ?? liveWords, cuts), drawnCensor),
+    [dubTimed, liveWords, cuts, drawnCensor],
   );
   // Timeline blocks follow the grouping of the chosen caption style.
   const groups = useMemo(
-    () => buildCues(captionWords, presetById(settings.preset).grouping),
-    [captionWords, settings.preset],
+    () =>
+      buildCues(
+        censorWords(captionWords, censor, false),
+        presetById(settings.preset).grouping,
+      ),
+    [captionWords, censor, settings.preset],
   );
   const translationStale = useMemo(
     () => !!translation && translation.source !== sourceKey(words),
@@ -1006,6 +1029,17 @@ export function App() {
     (indices: number[], force?: boolean) =>
       commitWords(toggleWordsCut(shown, indices, jumpCut, force)),
     [shown, jumpCut, commitWords],
+  );
+  /** Censoring works on the spoken words: a translation has no sound of its own to bleep. */
+  const canBleep = editable && !translated;
+  const onToggleBleep = useCallback(
+    (indices: number[], force?: boolean) =>
+      commitWords(toggleWordsBleep(shown, indices, force)),
+    [shown, commitWords],
+  );
+  const onClearBleeps = useCallback(
+    () => commitWords(clearBleeps(shown)),
+    [shown, commitWords],
   );
   const onToggleGap = useCallback(
     (index: number, force?: boolean) =>
@@ -1503,10 +1537,14 @@ export function App() {
   );
   const exportWords = useMemo(
     () =>
-      cuts.length
-        ? wordsThrough(dubTimed ?? shown, span, cuts)
-        : wordsIn(dubTimed ?? shown, trim, true),
-    [dubTimed, shown, trim, span, cuts],
+      censorWords(
+        cuts.length
+          ? wordsThrough(dubTimed ?? shown, span, cuts)
+          : wordsIn(dubTimed ?? shown, trim, true),
+        censor,
+        false,
+      ),
+    [dubTimed, shown, trim, span, cuts, censor],
   );
   const exportSource = useMemo(
     () =>
@@ -1564,6 +1602,7 @@ export function App() {
       fit: framed && !framed.crop ? framed.placement : null,
       trim,
       cuts: cuts.length ? cuts : null,
+      bleeps: bleeps.length ? bleeps : null,
     };
     // Translated or dub-timed words are not timed by the voice, so "Sesle vurgula" has nothing to go by.
     const loudness =
@@ -1571,7 +1610,10 @@ export function App() {
     // Only the trimmed part's words, so no caption line reaches outside it.
     void burner.burn(
       job.file,
-      wordsOutside(wordsIn(dubTimed ?? shown, trim), cuts),
+      censorWords(
+        wordsOutside(wordsIn(dubTimed ?? shown, trim), cuts),
+        drawnCensor,
+      ),
       settings,
       job.bands,
       loudness,
@@ -2104,6 +2146,8 @@ export function App() {
                   canCutFromText ? onToggleAllFillers : undefined
                 }
                 onToggleAllGaps={canCutFromText ? onToggleAllGaps : undefined}
+                onToggleBleep={canBleep ? onToggleBleep : undefined}
+                onClearBleeps={canBleep ? onClearBleeps : undefined}
                 cutSummary={jumpCutSummary}
               />
             ) : (
@@ -2348,6 +2392,7 @@ export function App() {
           jumpCutUnavailable={jumpCutUnavailable}
           jumpCutSummary={jumpCutSummary}
           hasManualCuts={hasManualCuts}
+          bleepCount={bleepCount}
           onRestoreManualCuts={canCutFromText ? onRestoreManualCuts : undefined}
           speakers={{
             speakers,

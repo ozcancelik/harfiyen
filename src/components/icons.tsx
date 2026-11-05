@@ -32,6 +32,14 @@ export const IconScissors = (p: P) => (
   </Svg>
 );
 
+/** A speaker crossed out: a word replaced by a bleep. */
+export const IconBleep = (p: P) => (
+  <Svg {...p}>
+    <path d="M2 6v4h2.5L8 13V3L4.5 6z" />
+    <path d="M10.5 5.5l3.5 5M14 5.5l-3.5 5" />
+  </Svg>
+);
+
 export const IconPlay = (p: P) => (
   <Svg {...p}>
     <path d="M5 3.5v9l7.5-4.5z" fill="currentColor" />

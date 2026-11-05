@@ -47,6 +47,7 @@ import { addUserFont, loadCaptionFont, type UserFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
 import { shownPhoto, shownPicture, type CaptionSettings } from "../captions/style";
 import type { Word } from "../engine";
+import { bleepPlanes } from "../lib/bleep";
 import { isKept, keptLength, keptParts, toFile, toOutput, type Kept } from "../lib/cuts";
 import { AUDIO_VIDEO, type Encoder, type OutputCodec } from "../lib/videoOutput";
 import type { Placement } from "../lib/crop";
@@ -119,6 +120,8 @@ export interface Encode {
   trim: { start: number; end: number } | null;
   /** Stretches taken out of it (jump cut), sorted, in file seconds; null for none. */
   cuts: { start: number; end: number }[] | null;
+  /** Stretches of the file's sound replaced by a bleep (censored words), sorted, in file seconds; null for none. */
+  bleeps: { start: number; end: number }[] | null;
 }
 
 // The browser's own choice when the hardware encoder is not there: the processor's.
@@ -153,6 +156,33 @@ function mixDub(sample: AudioSample, dub: DubMix, t0: number): AudioSample {
     if (dub.original > 0) sample.copyTo(plane, { planeIndex: c, format: "f32-planar" });
     for (let i = 0; i < n; i++) plane[i] = Math.max(-1, Math.min(1, plane[i] * dub.original + voice[i]));
   }
+  return new AudioSample({
+    data: out,
+    format: "f32-planar",
+    numberOfChannels: channels,
+    sampleRate: sample.sampleRate,
+    timestamp: sample.timestamp,
+  });
+}
+
+/**
+ * The sample with the bleep over the stretches in `ranges` (file time); `t0` is where the sample's clock starts in
+ * the file. The sample itself when no range falls in it.
+ */
+function bleepSample(sample: AudioSample, ranges: { start: number; end: number }[], t0: number): AudioSample {
+  const n = sample.numberOfFrames;
+  const channels = sample.numberOfChannels;
+  const from = sample.timestamp + t0;
+  const to = from + n / sample.sampleRate;
+  if (!ranges.some((r) => r.end > from && r.start < to)) return sample;
+  const out = new Float32Array(n * channels);
+  const planes: Float32Array[] = [];
+  for (let c = 0; c < channels; c++) {
+    const plane = out.subarray(c * n, (c + 1) * n);
+    sample.copyTo(plane, { planeIndex: c, format: "f32-planar" });
+    planes.push(plane);
+  }
+  bleepPlanes(planes, from, sample.sampleRate, ranges);
   return new AudioSample({
     data: out,
     format: "f32-planar",
@@ -320,6 +350,7 @@ async function burn(
   // With a jump cut, what is kept of the trim (or the file), and the output's sound written so far.
   const span = { start: t0, end: encode.trim?.end ?? Infinity };
   const kept = encode.cuts?.length ? keptParts(span, encode.cuts) : null;
+  const bleeps = encode.bleeps?.length ? encode.bleeps : null;
   const clock = { frames: 0 };
   const conversion = await Conversion.init({
     input,
@@ -354,12 +385,15 @@ async function burn(
     },
     // The file's audio, resampled to the dub's rate, with the dub mixed in; the cuts taken out.
     audio:
-      dub || kept
+      dub || kept || bleeps
         ? {
             ...(dub && { numberOfChannels: channels, sampleRate: DUB_RATE }),
             forceTranscode: true,
             process: (sample) => {
-              const mixed = dub ? mixDub(sample, dub, t0) : sample;
+              // The file's own sound is bleeped before the dub goes over it.
+              const heard = bleeps ? bleepSample(sample, bleeps, t0) : sample;
+              const mixed = dub ? mixDub(heard, dub, t0) : heard;
+              if (heard !== sample && heard !== mixed) heard.close();
               if (!kept) return mixed;
               const parts = cutAudio(mixed, t0, kept, span, clock);
               if (mixed !== sample) mixed.close();
@@ -560,8 +594,10 @@ async function burnAudio(
       }
       // At the file's time (the sink's), the dub mixed in; then cut to the kept parts at the sample
       // (the first may begin before the trim, the last end after it) and timed from 0:00.
-      const mixed = dub ? mixDub(sample, dub, 0) : sample;
+      const heard = encode.bleeps?.length ? bleepSample(sample, encode.bleeps, 0) : sample;
+      const mixed = dub ? mixDub(heard, dub, 0) : heard;
       const parts = cutAudio(mixed, 0, kept, span, clock);
+      if (heard !== sample && heard !== mixed) heard.close();
       if (mixed !== sample) mixed.close();
       sample.close();
       for (const part of parts) {
