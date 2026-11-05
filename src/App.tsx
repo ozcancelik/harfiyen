@@ -31,6 +31,7 @@ import {
 } from "./components/ProjectsMenu";
 import {
   IconGitHub,
+  IconStar,
   IconMic,
   IconMuted,
   IconOpen,
@@ -86,6 +87,7 @@ import {
 } from "./lib/projectStore";
 import { useBurner } from "./lib/useBurner";
 import { useTabProgress } from "./lib/useTabProgress";
+import { shortCount, useStars } from "./lib/useStars";
 import { useSourceInfo } from "./lib/useSourceInfo";
 import { useWaveform } from "./lib/useWaveform";
 import { useLogo } from "./lib/logo";
@@ -95,6 +97,12 @@ import { DEFAULT_KINETIC } from "./render/kinetic";
 import type { LogoLayer } from "./render/logoLayer";
 import { framing, type Crop } from "./lib/crop";
 import { wordsIn } from "./lib/trim";
+import {
+  bleepRanges,
+  censorWords,
+  clearBleeps,
+  toggleWordsBleep,
+} from "./lib/bleep";
 import {
   DEFAULT_JUMP_CUT,
   findCuts,
@@ -155,7 +163,11 @@ import {
   rename as renameSpeaker,
   type Speakers,
 } from "./lib/speakers";
-import { sourceKey, type Translation, type TranslationLang } from "./lib/translation";
+import {
+  sourceKey,
+  type Translation,
+  type TranslationLang,
+} from "./lib/translation";
 import { DEFAULT_LANG } from "./engine/languages";
 import { hasTranslation, LANG_NAMES } from "./lib/lang";
 import { DEFAULT_MODEL, modelInfo, MODELS, type ModelId } from "./models";
@@ -380,11 +392,14 @@ export function App() {
   useEffect(() => burner.reset(), [photoImage, burner.reset]);
   /** The photo or video still, when there is one and this project uses it in place of the aura. */
   const photo = settings.photo ? (photoImage?.bitmap ?? null) : null;
-  const photoVideo = settings.photo && photoImage?.kind === "video" ? photoImage.video : null;
-  const photoVideoUrl = settings.photo && photoImage?.kind === "video" ? photoImage.url : null;
+  const photoVideo =
+    settings.photo && photoImage?.kind === "video" ? photoImage.video : null;
+  const photoVideoUrl =
+    settings.photo && photoImage?.kind === "video" ? photoImage.url : null;
   const dubber = useDubber();
   const translator = useTranslator();
   const speakerTool = useSpeakers();
+  const stars = useStars("ozcancelik/harfiyen");
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("captions");
   const [customText, setCustomText] = useState("");
   const textRef = useRef<HTMLTextAreaElement>(null);
@@ -441,7 +456,8 @@ export function App() {
   );
   /** The stretches the jump cut or transcript edits take out, in file time; none while neither is active. */
   const hasManualCuts = useMemo(
-    () => !!job?.words.some((w) => w.cut !== undefined || w.cutGap !== undefined),
+    () =>
+      !!job?.words.some((w) => w.cut !== undefined || w.cutGap !== undefined),
     [job?.words],
   );
   const cuts = useMemo(
@@ -451,10 +467,13 @@ export function App() {
         : NO_CUTS,
     [jumpCut, jumpCutUnavailable, job?.words, job?.loudness, span, dubSpans],
   );
+  /** The stretches of the file's sound that are bleeped (censored words), always the spoken words'. */
+  const bleeps = useMemo(() => bleepRanges(job?.words ?? []), [job?.words]);
   const player = usePlayer(
     job?.file ?? null,
     trimming ? trimDraft : trim,
     trimming ? NO_CUTS : cuts,
+    bleeps,
   );
   const following = useFollow(player, job);
   useTabProgress(
@@ -883,8 +902,9 @@ export function App() {
   /** What the next translation is into: the pick, else the open translation's, else English (Turkish for English). */
   const [targetPick, setTargetPick] = useState<TranslationLang | null>(null);
   const targetLang: TranslationLang =
-    [targetPick, translation?.lang].find((l): l is TranslationLang => !!l && l !== sourceLang) ??
-    (translationLang(sourceLang) as TranslationLang);
+    [targetPick, translation?.lang].find(
+      (l): l is TranslationLang => !!l && l !== sourceLang,
+    ) ?? (translationLang(sourceLang) as TranslationLang);
   useEffect(() => {
     if (isTts) setCustomText(textFromWords(words));
   }, [isTts, words]);
@@ -933,15 +953,29 @@ export function App() {
   const dubTimed =
     dubbing && !dubStale && dubbing.voice.lang === lang ? dubbing.timed : null;
   /** What the player, the timeline and the exports caption with. */
+  /** What a bleeped word looks like in the captions; the kinetic stage has no mosaic or bar, so stars there. */
+  const censor = settings.censor ?? "stars";
+  const drawnCensor =
+    settings.kinetic?.on && (censor === "blur" || censor === "bar")
+      ? "stars"
+      : censor;
+  const bleepCount = useMemo(
+    () => words.reduce((n, w) => n + (w.bleep ? 1 : 0), 0),
+    [words],
+  );
   /** A filler the jump cut takes out is not captioned either. */
   const captionWords = useMemo(
-    () => wordsOutside(dubTimed ?? liveWords, cuts),
-    [dubTimed, liveWords, cuts],
+    () => censorWords(wordsOutside(dubTimed ?? liveWords, cuts), drawnCensor),
+    [dubTimed, liveWords, cuts, drawnCensor],
   );
   // Timeline blocks follow the grouping of the chosen caption style.
   const groups = useMemo(
-    () => buildCues(captionWords, presetById(settings.preset).grouping),
-    [captionWords, settings.preset],
+    () =>
+      buildCues(
+        censorWords(captionWords, censor, false),
+        presetById(settings.preset).grouping,
+      ),
+    [captionWords, censor, settings.preset],
   );
   const translationStale = useMemo(
     () => !!translation && translation.source !== sourceKey(words),
@@ -954,7 +988,8 @@ export function App() {
   useEffect(() => resetBurn(), [lang, resetBurn]);
 
   // Transcript edits, with undo (⌘Z / Ctrl+Z outside text fields). `en`: the edit was to the translation.
-  // `translation`: the translation as it was, when the edit moved it too (a shift of every caption).
+  // `translation`: the translation as it was, when the edit moved it too (a shift of every caption), or, with
+  // `en`, when a new translation replaced it (it may have been into another language).
   // An edit of who speaks keeps the speakers as they were instead.
   const history = useRef<
     (
@@ -994,6 +1029,17 @@ export function App() {
     (indices: number[], force?: boolean) =>
       commitWords(toggleWordsCut(shown, indices, jumpCut, force)),
     [shown, jumpCut, commitWords],
+  );
+  /** Censoring works on the spoken words: a translation has no sound of its own to bleep. */
+  const canBleep = editable && !translated;
+  const onToggleBleep = useCallback(
+    (indices: number[], force?: boolean) =>
+      commitWords(toggleWordsBleep(shown, indices, force)),
+    [shown, commitWords],
+  );
+  const onClearBleeps = useCallback(
+    () => commitWords(clearBleeps(shown)),
+    [shown, commitWords],
   );
   const onToggleGap = useCallback(
     (index: number, force?: boolean) =>
@@ -1060,8 +1106,12 @@ export function App() {
     const prev = h.pop();
     if (prev && "speakers" in prev) {
       if (job) setSpeakers(job.id, prev.speakers);
-    } else if (prev?.en && job?.translation) {
-      setTranslation(job.id, { ...job.translation, words: prev.words });
+    } else if (prev?.en && job && (prev.translation ?? job.translation)) {
+      // A replaced translation comes back whole, language included; an edit only brings back its words.
+      setTranslation(
+        job.id,
+        prev.translation ?? { ...job.translation!, words: prev.words },
+      );
       setShowEn(true);
     } else if (prev && !prev.en) {
       setWords(prev.words);
@@ -1113,14 +1163,22 @@ export function App() {
   const cancelSpeakers = speakerTool.cancel;
   useEffect(() => cancelSpeakers(), [job?.id, cancelSpeakers]);
   /** `then` runs with the translation once it is made (not if it is cancelled or the job changes). */
-  const translate = (then?: (t: Translation) => void, into: TranslationLang = targetLang) => {
+  const translate = (
+    then?: (t: Translation) => void,
+    into: TranslationLang = targetLang,
+  ) => {
     if (!job) return;
     const id = job.id;
     const before = job.translation;
     translator.translate(words, sourceLang, into, (t) => {
       // A new translation replaces any edits to the old one; ⌘Z brings them back.
       if (before) {
-        history.current.push({ jobId: id, en: true, words: before.words });
+        history.current.push({
+          jobId: id,
+          en: true,
+          words: before.words,
+          translation: before,
+        });
         setCanUndo(true);
       }
       setTranslation(id, t);
@@ -1479,10 +1537,14 @@ export function App() {
   );
   const exportWords = useMemo(
     () =>
-      cuts.length
-        ? wordsThrough(dubTimed ?? shown, span, cuts)
-        : wordsIn(dubTimed ?? shown, trim, true),
-    [dubTimed, shown, trim, span, cuts],
+      censorWords(
+        cuts.length
+          ? wordsThrough(dubTimed ?? shown, span, cuts)
+          : wordsIn(dubTimed ?? shown, trim, true),
+        censor,
+        false,
+      ),
+    [dubTimed, shown, trim, span, cuts, censor],
   );
   const exportSource = useMemo(
     () =>
@@ -1540,6 +1602,7 @@ export function App() {
       fit: framed && !framed.crop ? framed.placement : null,
       trim,
       cuts: cuts.length ? cuts : null,
+      bleeps: bleeps.length ? bleeps : null,
     };
     // Translated or dub-timed words are not timed by the voice, so "Sesle vurgula" has nothing to go by.
     const loudness =
@@ -1547,7 +1610,10 @@ export function App() {
     // Only the trimmed part's words, so no caption line reaches outside it.
     void burner.burn(
       job.file,
-      wordsOutside(wordsIn(dubTimed ?? shown, trim), cuts),
+      censorWords(
+        wordsOutside(wordsIn(dubTimed ?? shown, trim), cuts),
+        drawnCensor,
+      ),
       settings,
       job.bands,
       loudness,
@@ -1831,7 +1897,11 @@ export function App() {
             videoName={`${exportName}${videoSuffix}`}
             captions={!settings.hidden}
             kinetic={!!settings.kinetic?.on}
-            photo={photo && shownPhoto(settings, true) ? (photoImage?.kind ?? "image") : null}
+            photo={
+              photo && shownPhoto(settings, true)
+                ? (photoImage?.kind ?? "image")
+                : null
+            }
             meta={{
               file: title,
               model: modelInfo(job.model).spec,
@@ -1869,9 +1939,20 @@ export function App() {
           href="https://github.com/ozcancelik/harfiyen"
           target="_blank"
           rel="noopener noreferrer"
-          title="Kaynak kodu GitHub'da"
+          title="GitHub'da yıldızla"
+          aria-label="GitHub'da yıldızla"
         >
-          <IconGitHub /> <TbLabel>GitHub</TbLabel>
+          <IconGitHub />{" "}
+          {stars !== null ? (
+            <TbLabel>
+              <span className="inline-flex items-center gap-1 tabular-nums">
+                <IconStar />
+                {shortCount(stars)}
+              </span>
+            </TbLabel>
+          ) : (
+            <TbLabel>GitHub</TbLabel>
+          )}
         </a>
         <div className="hidden max-[480px]:block">
           <MoreMenu
@@ -1889,7 +1970,7 @@ export function App() {
             <PaneTitle>Transkript</PaneTitle>
             {!translation && job && (
               <span
-                className="mr-auto rounded-[4px] bg-well px-1.5 py-0.5 text-[10.5px] font-semibold tracking-[0.02em] text-fg-3"
+                className="mr-auto rounded-sm bg-well px-1.5 py-0.5 text-[10.5px] font-semibold tracking-[0.02em] text-fg-3"
                 title={`${LANG_NAMES[sourceLang]} transkript`}
               >
                 {sourceLang.toUpperCase()}
@@ -2061,8 +2142,12 @@ export function App() {
                 spanStart={span.start}
                 onToggleWords={canCutFromText ? onToggleWords : undefined}
                 onToggleGap={canCutFromText ? onToggleGap : undefined}
-                onToggleAllFillers={canCutFromText ? onToggleAllFillers : undefined}
+                onToggleAllFillers={
+                  canCutFromText ? onToggleAllFillers : undefined
+                }
                 onToggleAllGaps={canCutFromText ? onToggleAllGaps : undefined}
+                onToggleBleep={canBleep ? onToggleBleep : undefined}
+                onClearBleeps={canBleep ? onClearBleeps : undefined}
                 cutSummary={jumpCutSummary}
               />
             ) : (
@@ -2075,7 +2160,7 @@ export function App() {
         </Pane>
 
         {/* On phones the empty state grows to fit the welcome text instead of clipping it. */}
-        <main className="flex min-h-0 min-w-0 bg-bg p-3.5 max-[860px]:order-1 max-[860px]:h-[56vw] max-[860px]:min-h-[220px] max-[860px]:has-data-dropzone:h-auto max-[480px]:p-2.5">
+        <main className="flex min-h-0 min-w-0 bg-bg p-3.5 max-[860px]:order-1 max-[860px]:h-[56vw] max-[860px]:min-h-55 max-[860px]:has-data-dropzone:h-auto max-[480px]:p-2.5">
           <Viewer
             player={player}
             words={captionWords}
@@ -2307,6 +2392,7 @@ export function App() {
           jumpCutUnavailable={jumpCutUnavailable}
           jumpCutSummary={jumpCutSummary}
           hasManualCuts={hasManualCuts}
+          bleepCount={bleepCount}
           onRestoreManualCuts={canCutFromText ? onRestoreManualCuts : undefined}
           speakers={{
             speakers,
@@ -2323,10 +2409,20 @@ export function App() {
           translationStale={translationStale}
           targetLang={targetLang}
           onTargetLang={setTargetPick}
-          canTranslate={!!job && job.status !== "running" && words.length > 0 && hasTranslation(sourceLang)}
+          canTranslate={
+            !!job &&
+            job.status !== "running" &&
+            words.length > 0 &&
+            hasTranslation(sourceLang)
+          }
           onTranslate={() => translate()}
           onCancelTranslate={translator.cancel}
-          canTranslateDub={editable && !!job?.file && words.length > 0 && hasTranslation(sourceLang)}
+          canTranslateDub={
+            editable &&
+            !!job?.file &&
+            words.length > 0 &&
+            hasTranslation(sourceLang)
+          }
           onTranslateDub={() => translate((t) => startDub(t.words), voice.lang)}
           tab={inspectorTab}
           onTab={setInspectorTab}
@@ -2346,7 +2442,7 @@ export function App() {
           disabledReason={micBlocked}
           onStop={stopLive}
         />
-        <span className="mx-1 h-[22px] w-px flex-none bg-line" aria-hidden />
+        <span className="mx-1 h-5.5 w-px flex-none bg-line" aria-hidden />
         <button
           className={TP_BTN}
           onClick={player.toggle}
@@ -2355,7 +2451,7 @@ export function App() {
         >
           {player.playing ? <IconPause /> : <IconPlay />}
         </button>
-        <span className="min-w-24 flex-none text-[12px] text-fg-3 tabular-nums [font-feature-settings:'tnum'_1] max-[860px]:min-w-0 max-[860px]:flex-1 max-[860px]:text-[13px]">
+        <span className="min-w-24 flex-none text-[12px] text-fg-3 tabular-nums font-features-['tnum'_1] max-[860px]:min-w-0 max-[860px]:flex-1 max-[860px]:text-[13px]">
           <strong className="font-semibold text-fg">
             {clock(player.time)}
           </strong>{" "}
@@ -2375,14 +2471,18 @@ export function App() {
               player.muted || player.volume === 0 ? "Sesi aç" : "Sesi kapat"
             }
           >
-            {player.muted || player.volume === 0 ? <IconMuted /> : <IconSound />}
+            {player.muted || player.volume === 0 ? (
+              <IconMuted />
+            ) : (
+              <IconSound />
+            )}
           </button>
           {job && !job.recording && (
             <div className="pointer-events-none invisible absolute bottom-full left-1/2 z-20 -translate-x-1/2 translate-y-1 pb-1.5 opacity-0 transition-all duration-150 ease-out group-focus-within/vol:pointer-events-auto group-focus-within/vol:visible group-focus-within/vol:translate-y-0 group-focus-within/vol:opacity-100 group-hover/vol:pointer-events-auto group-hover/vol:visible group-hover/vol:translate-y-0 group-hover/vol:opacity-100">
-              <div className="flex h-28 w-8 items-center justify-center rounded-[10px] border border-popover-line bg-popover shadow-[0_12px_28px_var(--shadow-pop),0_0_0_1px_var(--tint)] backdrop-blur-[16px]">
+              <div className="flex h-28 w-8 items-center justify-center rounded-[10px] border border-popover-line bg-popover shadow-[0_12px_28px_var(--shadow-pop),0_0_0_1px_var(--tint)] backdrop-blur-lg">
                 <input
                   type="range"
-                  className="slider m-0 h-[18px] w-20 flex-none -rotate-90"
+                  className="slider m-0 h-4.5 w-20 flex-none -rotate-90"
                   min={0}
                   max={1}
                   step={0.01}

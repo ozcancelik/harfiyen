@@ -27,6 +27,8 @@ export interface Word {
   cut?: boolean;
   /** Shorten the silence before this word (`true`), or keep it even when automatic silence cutting is on (`false`). */
   cutGap?: boolean;
+  /** Replaced by a bleep in the sound and masked in the captions ("s****"). */
+  bleep?: true;
 }
 
 /**

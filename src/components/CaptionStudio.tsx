@@ -79,6 +79,14 @@ const POSITIONS = [
   { value: "bottom" as const, label: "Altta" },
 ];
 
+const CENSORS = [
+  { value: "stars" as const, label: "Yıldız", note: "Kelime s**** diye yazılır" },
+  { value: "blur" as const, label: "Buzlama", note: "Kelimenin yerinde kareli mozaik durur" },
+  { value: "bar" as const, label: "Bant", note: "Kelimenin üstünde koyu bir şerit" },
+  { value: "hide" as const, label: "Gizle", note: "Kelime altyazıda hiç görünmez" },
+  { value: "off" as const, label: "Açık", note: "Yazı olduğu gibi kalır, yalnız ses bip'lenir" },
+];
+
 const BACKGROUNDS = [
   { value: "box" as const, label: "Kutu", note: "Yazının arkasında koyu kutu" },
   { value: "outline" as const, label: "Kontur", note: "Harflerin çevresinde siyah çizgi" },
@@ -94,6 +102,7 @@ export function CaptionStudio({
   lang = TRANSCRIPT_LANG,
   onScene,
   speakerCount = 0,
+  bleepCount = 0,
 }: {
   settings: CaptionSettings;
   /** The project's ground, behind the style cards. */
@@ -106,6 +115,8 @@ export function CaptionStudio({
   onScene: () => void;
   /** How many speakers the open transcript tells apart; their names can be shown from two. */
   speakerCount?: number;
+  /** How many words are censored: the choice of how the captions show them comes with the first. */
+  bleepCount?: number;
 }) {
   const userFonts = useUserFonts();
   const fontFile = useRef<HTMLInputElement>(null);
@@ -161,6 +172,33 @@ export function CaptionStudio({
           <LinkButton type="button" className="justify-self-start" onClick={onScene}>
             Sahne sekmesine git
           </LinkButton>
+        </Section>
+      )}
+      {bleepCount > 0 && (
+        <Section title="Bip'lenen kelimeler">
+          <RowGroup>
+            <RowLabel>Altyazıda</RowLabel>
+            <Select
+              label="Bip'lenen kelime"
+              value={settings.censor ?? "stars"}
+              options={CENSORS}
+              onChange={(censor) => onChange({ ...settings, censor })}
+              disabled={disabled}
+              render={(o, inList) => (
+                <span className={OPT_TEXT}>
+                  <span className={OPT_TITLE}>{o.label}</span>
+                  {inList && <span className={OPT_NOTE}>{CENSORS.find((c) => c.value === o.value)!.note}</span>}
+                </span>
+              )}
+            />
+          </RowGroup>
+          <Hint>
+            {bleepCount} kelime bip'li; sesi her durumda bip olur. Altyazı dosyalarında (SRT, VTT) buzlama ve bant
+            yıldız olarak yazılır.
+            {settings.kinetic?.on && (settings.censor === "blur" || settings.censor === "bar")
+              ? " Kinetik tipografide buzlama ve bant çizilemez, yerinde yıldız kullanılır."
+              : ""}
+          </Hint>
         </Section>
       )}
       {speakerCount > 1 && (

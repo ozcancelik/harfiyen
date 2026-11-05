@@ -1,3 +1,4 @@
+import type { Censor } from "../lib/bleep";
 import type { CueRules } from "../lib/cues";
 import type { AuraPaletteId, AuraStyleId } from "../render/aura";
 import { DEFAULT_KINETIC, type KineticSettings } from "../render/kinetic";
@@ -83,6 +84,8 @@ export interface CaptionSettings {
   voiceEmphasis: boolean;
   /** The speaker's name above the caption where they start talking (when the speakers were told apart). */
   speakerNames?: boolean;
+  /** What a bleeped (censored) word looks like in the captions. Missing: stars. */
+  censor?: Censor;
   /** Missing in settings saved before there was a logo. */
   logo?: LogoSettings;
   /** No captions in the player or the video (a dub-only video, say); kept with the project. */
@@ -129,6 +132,7 @@ export interface Preset {
     | "auraStyle"
     | "voiceEmphasis"
     | "speakerNames"
+    | "censor"
     | "logo"
     | "hidden"
     | "kinetic"
@@ -368,6 +372,7 @@ export const settingsFor = (id: PresetId, prev?: CaptionSettings): CaptionSettin
     auraStyle: prev?.auraStyle ?? "aura",
     voiceEmphasis: prev?.voiceEmphasis ?? false,
     speakerNames: prev?.speakerNames ?? false,
+    censor: prev?.censor ?? "stars",
     logo: prev?.logo ?? DEFAULT_LOGO,
     hidden: prev?.hidden ?? false,
     kinetic: prev?.kinetic ?? DEFAULT_KINETIC,

@@ -115,6 +115,7 @@ export function Inspector({
   jumpCutUnavailable,
   jumpCutSummary,
   hasManualCuts,
+  bleepCount,
   onRestoreManualCuts,
   speakers,
   captionLang,
@@ -196,6 +197,8 @@ export function Inspector({
   jumpCutUnavailable: string | null;
   jumpCutSummary: JumpCutSummary | null;
   hasManualCuts?: boolean;
+  /** How many words are censored (bleeped). */
+  bleepCount?: number;
   onRestoreManualCuts?: () => void;
   /** Telling who speaks when. */
   speakers: ComponentProps<typeof SpeakersSection>;
@@ -298,6 +301,7 @@ export function Inspector({
             lang={captionLang}
             onScene={() => setTab("scene")}
             speakerCount={speakers.speakers?.names.length}
+            bleepCount={bleepCount}
           />
         ) : tab === "scene" ? (
           <SceneStudio
