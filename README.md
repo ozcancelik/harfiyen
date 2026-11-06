@@ -6,12 +6,12 @@
 </p>
 
 <p align="center">
-  <strong>Türkçe ve İngilizce konuşmayı tarayıcıda yazıya döker, çevirir, yapay sesle seslendirir ve altyazıyı videonun içine yazar.</strong><br />
+  <strong>Konuşmayı tarayıcıda yazıya döker (Türkçe öncelikli, 31 dil), çevirir, yapay sesle seslendirir ve altyazıyı videonun içine yazar.</strong><br />
   Ses ve video bilgisayarından çıkmaz. 
 </p>
 
 <p align="center">
-  Turkish and English speech-to-text, translation, synthetic-voice dubbing and styled video captions, right in your browser.<br />
+  Turkish-first speech-to-text in 31 languages, translation, synthetic-voice dubbing and styled video captions, right in your browser.<br />
   Transcribe files or live audio, translate, dub, and export captioned videos — all processed locally.
 </p>
 
@@ -37,7 +37,8 @@ https://github.com/user-attachments/assets/72944ea4-75aa-4462-b5eb-b98a2f604bfc
 
 Harfiyen, [seda-v0.2](https://huggingface.co/atasoglu/seda-v0.2) Türkçe konuşma tanıma modelini doğrudan
 tarayıcıda, ekran kartı üzerinde (**WebGPU**) çalıştırır. Daha yüksek doğruluk için
-[Whisper large-v3 turbo](https://huggingface.co/openai/whisper-large-v3-turbo), ekran kartı olmayan cihazlarda da
+[Whisper large-v3 turbo](https://huggingface.co/openai/whisper-large-v3-turbo) (31 dilde yazıya döker), en hızlısı
+için [Mihu](https://huggingface.co/mihuai/turkish-stt-66m-v2), ekran kartı olmayan cihazlarda da
 [Duyu-small](https://huggingface.co/KaanAydinli/Duyu-small) seçilebilir. Bir video ya da ses dosyası yüklersin,
 istersen kadrajını (örneğin dikey 9:16) ve kullanacağın bölümü seçip **Yazıya dök** dersin; kelimeler zaman
 kodlarıyla belirir, istediğin altyazı stilini seçersin ve altyazılı videoyu indirirsin. Mikrofonla konuşurken de
@@ -59,15 +60,20 @@ canlı çalışır.
   önce onay sorulur.
 - Döküm sürerken önizleme yazılanı takip eder: görüntü ve altyazı o an yazılan yeri gösterir. Oynatınca ya da
   sarınca takip durur.
-- **Videodaki dil:** Türkçe ya da İngilizce, yazıya dökmeden önce seçilir ve projeyle saklanır. İngilizceyi
-  yalnızca Whisper anlar (ekran kartı gerekir); İngilizce seçilince model Whisper Turbo Hafif'e geçer. İngilizce
-  transkriptte Türkçe sayı kuralları uygulanmaz; İngilizce seslendirme doğrudan transkripti okur. İngilizce video
-  Türkçeye çevrilip Türkçe altyazı ve Türkçe seslendirme (voice-over) yapılabilir.
-- Üç model, üst çubuktan (telefonda **⋯** menüsünden) seçilir:
+- **Videodaki dil:** yazıya dökmeden önce menüden seçilir ve projeyle saklanır; yeni dosya ve yeni proje Türkçe
+  başlar. Whisper 31 dil bilir: ana diller Türkçe, İngilizce, Almanca, Fransızca, İspanyolca, İtalyanca, Portekizce,
+  Hollandaca, Rusça ve Lehçe; Ukraynaca, Çekçe, Romence, Macarca, Yunanca, Bulgarca, İsveççe, Danca, Norveççe, Fince,
+  Hırvatça, Sırpça, Arnavutça, Azerice, Kazakça, Özbekçe, Gürcüce, Hintçe, Endonezce, Vietnamca ve Korece deneysel.
+  Seda, Mihu ve Duyu yalnızca Türkçe bilir; başka bir dil seçilince model Whisper Turbo Hafif'e geçer (ekran kartı
+  gerekir). Türkçe dışı transkriptte Türkçe sayı kuralları uygulanmaz. Yabancı dildeki video Türkçeye çevrilip Türkçe
+  altyazı ve Türkçe seslendirme (voice-over) yapılabilir (bkz. Çeviri).
+- Dört model, üst çubuktan (telefonda **⋯** menüsünden) seçilir:
   - **Seda** (varsayılan, ~190 MB): küçük ve hızlı, canlı mikrofonda ve her cihazda çalışır. Üç doğruluk
     ayarı var: **Hızlı**, **Dengeli** ve dil modeliyle **En doğru**. Dosyaları daha doğru olan 5,12 saniyelik
     parçalarla, mikrofonu anında yazmak için 0,64 saniyelik parçalarla işler (aynı model, iki ayrı dışa aktarım).
     Cümleler ses etkinliği algılayıcıyla (Silero VAD) bulunan kısa duraklamalarda kesinleşir.
+  - **Mihu** (~70 MB): en küçük ve en hızlısı; düşük gecikmelidir, canlı mikrofonda ve her cihazda çalışır.
+    Seda gibi küçük harfli, noktalamasız yazar; noktalama sonradan eklenir.
   - **Duyu** (~85 MB): ekran kartı istemez, işlemcide çalışır; noktalamayı ve büyük harfleri kendisi yazar.
     Yalnızca dosyalarda çalışır, canlı kayıtta kullanılmaz; sesi 12–15 saniyelik parçalar hâlinde işler.
   - **Whisper Turbo** (~1,5 GB) ve **Whisper Turbo Hafif** (~600 MB, 4 bit encoder): daha az hata,
@@ -124,6 +130,12 @@ canlı çalışır.
 - On yazı tipi, hepsi Türkçe karakterlerin tamamıyla: Google Sans Flex, Montserrat, Poppins, Inter, Anton,
   Bebas Neue, Bangers, Luckiest Guy, Schibsted Grotesk, Literata. Kendi yazı tipin de (TTF, OTF, WOFF, WOFF2)
   eklenebilir; tarayıcıda saklanır.
+- **Kalınlık, italik, harf aralığı:** kalınlık değişken yazı tiplerinde (Montserrat, Inter, Schibsted Grotesk,
+  Literata ve yüklediğin değişken yazı tipleri) kendi aralığında ayarlanır. Gerçek italiği olan yazı tiplerinde
+  italik kendi dosyasıyla, diğerlerinde eğilerek çizilir.
+- **Bip'lenen kelimeler:** bip'lenen kelimenin altyazıda nasıl görüneceği seçilir: **Yıldız** (s****), **Buzlama**
+  (kelimenin yerinde mozaik), **Bant** (üstünde koyu şerit), **Gizle** ya da **Açık** (yalnızca ses bip'lenir). SRT ve
+  VTT'de buzlama ve bant yıldız olarak yazılır; kinetik tipografide de yıldız kullanılır (bkz. Görüntü ve dışa aktarma).
 - Boyut, konum, zemin (kutu, kontur, gölge), yazı ve vurgu rengi, Türkçe kurallarına uygun büyük harf
   (i → İ).
 - **Altyazıyı göster** kapatılırsa oynatıcıda ve videoda altyazı olmaz; seslendirmeli ama altyazısız video çıkarmak
@@ -151,6 +163,8 @@ canlı çalışır.
   **Ufuk** (sesin son saniyeleri üzerinde uçulan retro dalga arazisi), **Küre** (sesle şekil değiştiren yanardöner
   3D damla) ve **Sırtlar** (üst üste dizilmiş ışık çizgileri). Beş renk paleti var: Çini, Gün batımı, Orman,
   Lavanta, Gece.
+- **Video:** arka plana fotoğraf yerine video da (MP4, WebM, MOV; en fazla 250 MB) konabilir. Sessiz ve döngüde oynar,
+  kareyi kaplar; **Net** ya da **Bulanık** (koyulaştırılmış) seçilir. Fotoğraf gibi bu tarayıcıda saklanır.
 - **Fotoğraf:** arka plan olarak kendi fotoğrafın (JPEG, PNG, WebP; örneğin podcast kapağı) kareyi kaplar, taşan kısmı
   kesilir. **Net** ya da **Bulanık** seçilir; bulanıkta yazı her fotoğrafta okunur. Kinetik tipografi üstünde ince bir
   perdeyle durur. Fotoğraf bu tarayıcıda saklanır, sonraki projelerde de hazırdır; videolarda seçilince videonun
@@ -168,6 +182,14 @@ canlı çalışır.
   sürüklenince oynatıcı o kareyi gösterir. Yalnızca o bölüm yazıya dökülür, oynatılır ve dışa aktarılır; video,
   SRT ve VTT zamanları 0:00'dan başlar. **Tamam**'dan sonra zaman çizelgesi yalnızca seçilen bölümü kaplar
   (transkript ve oynatıcıdaki zamanlar dosyanınki olarak kalır); **Kes**'e yeniden basınca bütün dosya görünür.
+- **Metinden kurgu:** transkriptte kelimeleri seçip **Delete** (ya da **Alt+tıkla**) ile videodan kes. **Kurgu**
+  modu açıkken kelimeye tıklamak ya da üstünden sürüklemek yeter. Satırın makas düğmesi bütün satırı keser,
+  kelimeler arasındaki **⏸** rozetleri o sessizliği kısaltır. Kesilen yerler üstü çizili kalır, tekrar tıklayınca
+  geri gelir; ⌘Z / Ctrl+Z ile de geri alınır. Oynatıcı kesilen yerleri atlar; video, SRT ve VTT kesilmiş hâliyle
+  dışa aktarılır. Çeviri gösterilirken kesme ve bip'leme yapılmaz.
+- **Kelime bip'leme:** transkriptte kelimeleri seçip **B**'ye (ya da **Kelimeyi bip'le**'ye) bas; kelimenin sesi
+  tamamen gider, yerine bip çalar. Oynatıcıda ve altyazılı MP4'te duyulur; altyazıda nasıl görüneceği seçilir
+  (bkz. Altyazı). Bip'lenen kelime turuncu ve dalgalı altı çizili görünür; aynı tuşla kaldırılır.
 - Boşlukları kesme (jump cut): **Metin** sekmesinde **Sessizlikleri at** açılınca kelimeler arasındaki uzun
   sessizlikler videodan çıkar, cümleler arka arkaya gelir. Sessizlikler transkriptin kelime zamanlarından bulunur,
   sesin düzeyiyle inceltilir: transkriptte olmayan bir ses (gülme, öksürük) kesilmez. **En kısa** kaç saniyelik
@@ -195,8 +217,9 @@ canlı çalışır.
   [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) ile yapay bir Türkçe sesle yeniden okunur. Her
   altyazı satırı kendi zamanında başlar; yerine sığmayan satır en fazla 1,35 kat hızlı okunur. Ahenk Cep rakamları,
   tarihleri ve kısaltmaları en iyi okuyan sestir; diğerlerinden biraz yavaştır.
-- **İngilizce (voice-over):** İngilizce çeviri Supertonic 3 ile okunur. Çeviri yoksa **Çevir ve seslendir** önce
-  çevirir, sonra okur; ilerleme tek çubukta görünür. Her cümle Türkçesinin başladığı anda başlar; sığmayan cümle önündeki sessizliğe biraz erken başlar,
+- **Diğer diller (voice-over):** İngilizce, Almanca, Fransızca, İspanyolca ve Rusça transkript ya da çeviri
+  Supertonic 3 ile okunur. Çeviri yoksa **Çevir ve seslendir** önce
+  çevirir, sonra okur; ilerleme tek çubukta görünür. Her cümle aslının başladığı anda başlar; sığmayan cümle önündeki sessizliğe biraz erken başlar,
   gerekirse en fazla 1,15 kat hızlı okunur (Supertonic daha hızlıda cümle sonunu yutuyor). On ses arasından
   seçilir (Alex, James, Robert, Sam, Daniel, Sarah, Lily, Jessica, Olivia, Emily).
 - **Metin seslendir:** boş ekrandaki **Metin seslendir** ile dosya olmadan, yazılan ya da yapıştırılan metin
@@ -220,17 +243,20 @@ canlı çalışır.
 
 ### Çeviri
 
-- Türkçe transkript [opus-mt-tc-big-tr-en](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-tr-en) ile
-  İngilizceye, İngilizce transkript [opus-mt-tc-big-en-tr](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-tr)
-  ile Türkçeye, cümle cümle çevrilir. Her cümle aslının zamanında görünür; kelimeleri o süreyi uzunluklarına göre
-  paylaşır.
-- Transkriptin üstündeki **TR / EN** ile gösterilen dil seçilir: altyazı, zaman çizelgesi, SRT/VTT/metin ve
-  altyazılı MP4 o dilde olur (çeviride dosya adına `.en` ya da `.tr` eklenir). Çeviri de düzenlenebilir, bulup
-  değiştirilebilir.
-- Çeviri seslendirmeyle sesli de okunabilir: Türkçe videoya İngilizce, İngilizce videoya Türkçe voice-over
-  (bkz. Seslendirme).
-- Çeviri projeyle birlikte kaydedilir. Transkript sonradan değişirse çevirinin eskidiği söylenir.
-  Her yönün modeli ilk kullanımda yaklaşık 360 MB indirir ve işlemcide (WASM) çalışır.
+- Türkçe, İngilizce, Almanca, Fransızca, İspanyolca ve Rusça arasında cümle cümle çevrilir; **Metin → Çeviri**'de
+  **Hedef dil** seçilir. Türkçe ile İngilizce arasında
+  [opus-mt-tc-big-tr-en](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-tr-en) ve
+  [opus-mt-tc-big-en-tr](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-tr), diğer dillerle İngilizce arasında
+  Helsinki-NLP'nin opus-mt modelleri kullanılır. İngilizce olmayan iki dil (örneğin Türkçe → Almanca) İngilizce
+  üzerinden iki adımda çevrilir; biraz daha çok hata içerebilir. Her cümle aslının zamanında görünür; kelimeleri o
+  süreyi uzunluklarına göre paylaşır.
+- Transkriptin üstündeki dil düğmesiyle (örneğin **TR / EN**) gösterilen dil seçilir: altyazı, zaman çizelgesi,
+  SRT/VTT/metin ve altyazılı MP4 o dilde olur (çeviride dosya adına dil kodu eklenir, örneğin `.en`). Çeviri de
+  düzenlenebilir, bulup değiştirilebilir.
+- Çeviri seslendirmeyle sesli de okunabilir: Türkçe videoya İngilizce ya da Almanca, yabancı dildeki videoya Türkçe
+  voice-over (bkz. Seslendirme).
+- Çeviri projeyle birlikte kaydedilir. Transkript sonradan değişirse çevirinin eskidiği söylenir. Her yönün modeli
+  ilk kullanımda indirilir (Türkçe–İngilizce yaklaşık 360 MB, diğerleri yaklaşık 135 MB) ve işlemcide (WASM) çalışır.
 
 ### Konuşmacılar
 
@@ -277,8 +303,12 @@ canlı çalışır.
   kaldığı yerden sürer.
 - Modeller tarayıcının bu siteye ayırdığı alanda (Cache Storage) durur. Tarayıcı ayarlarından site verisini
   silmek projeleri de siler; yalnızca modellerden yer açmak için Ayarlar kullanılır.
+- **Çevrimdışı:** uygulama bir kez açıldıktan sonra internet olmadan da açılır; indirilmiş modellerle her şey
+  çalışır. Yeni sürüm yayınlanınca üstte **Yeni sürüm hazır** bildirimi çıkar, yenileyince yeni sürüme geçilir.
+- Yazıya dökme ve dışa aktarma sürerken ilerleme sekme başlığında ve favicon'da görünür; başka sekmedeyken de
+  takip edilir.
 
-> Seda küçük harfli, noktalamasız metin üretir; noktalama ve büyük harf ayrı bir modelle sonradan eklenir.
+> Seda ve Mihu küçük harfli, noktalamasız metin üretir; noktalama ve büyük harf ayrı bir modelle sonradan eklenir.
 > Sayılar seçilen kurala göre rakama çevrilir.
 
 ## Hızlı başlangıç
@@ -289,7 +319,7 @@ tarayıcı (masaüstü Chrome veya Edge önerilir).
 ```bash
 npm install
 python3 -m pip install -r scripts/requirements.txt
-npm run models     # konuşma tanıma, noktalama ve çeviri modellerini indirir ve tarayıcı için dönüştürür (bir kez, Whisper dahil ~3 GB)
+npm run models     # konuşma tanıma, noktalama ve çeviri modellerini indirir ve tarayıcı için dönüştürür (bir kez, Whisper dahil ~4 GB)
 npm run dev        # http://localhost:5173
 ```
 
@@ -333,6 +363,8 @@ güvenilir yap (iOS: Ayarlar → Genel → Hakkında → Sertifika Güven Ayarla
 | Zamanı düzenlemek          | Satırın üstüne gel, saat simgesi; bütün altyazıyı kaydırmak için **[** / **]**             |
 | Metni sese hizalamak       | Transkriptin başlığındaki hizalama düğmesi, metni yapıştır                                 |
 | Sessizlikleri kesmek       | Sağ panelde **Metin → Sessizlikleri at**                                                   |
+| Metinden kesmek            | Kelimeleri seç, **Delete** ya da **Alt+tıkla**; transkriptin üstünde **Kurgu** modu       |
+| Kelime bip'lemek           | Kelimeleri seç, **B**; altyazıdaki görünümü **Altyazı → Bip'lenen kelimeler**              |
 | Konuşmacıları ayırmak      | Sağ panelde **Metin → Konuşmacıları ayır**                                                 |
 | Kinetik tipografi, aura    | Sağ panelde **Sahne**                                                                      |
 | Metni seslendirmek         | Boş ekranda **Metin seslendir**                                                            |
@@ -368,6 +400,19 @@ Model kartındaki doğruluk değerleri (WER, düşük olan iyi; FLEURS-TR test).
 | `fast`     |           | 9,38      |
 | `balanced` |           | 7,26      |
 | `accurate` | 11,60     | **6,38**  |
+
+## MCP sunucusu
+
+Harfiyen'in motorları [MCP](https://modelcontextprotocol.io) sunucusu olarak da çalışır: yazıya döküm, noktalama,
+çeviri, konuşmacı ayırma, seslendirme, metinden kurgu, bip'leme ve altyazılı video, Claude Code gibi yapay zeka
+araçlarından kullanılabilir. Web uygulamasıyla aynı kod ve aynı modeller kullanılır; ses ve video bilgisayardan
+çıkmaz.
+
+```bash
+claude mcp add harfiyen -- npx -y harfiyen-mcp
+```
+
+Kurulum, gereksinimler (ffmpeg, Chrome) ve araçların listesi [mcp/README.md](mcp/README.md)'de.
 
 ## Yayına alma
 
@@ -416,8 +461,8 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
   Whisper seçiliyken çalışır (döküm Seda ile yapılmış olabilir) ve ses dosyası gerektirir.
 - Zaman düzenleme transkriptten yapılır; zaman çizelgesinde kelime ya da satır kenarlarını sürüklemek yok. Tek
   kelimenin ya da satırın zamanı değişince çevirisi kendiliğinden kaymaz (toplu kaydırma ikisini birlikte kaydırır).
-- Kesme tek bölümle sınırlı. Boşlukları kesme yalnızca sessizlikleri ve dolgu seslerini çıkarır; tek tek kesim
-  geri alınamaz, transkriptten kelime silerek videodan kesmek yok. Kelime zamanları sessizliği de kapsıyorsa
+- Bölüm seçme (**Kes**) tek bölümle sınırlı. Metinden kurgu kelimenin zamanından keser; zamanı kaymış kelimede
+  kesimin kenarında ses parçası kalabilir. Kelime zamanları sessizliği de kapsıyorsa
   (Whisper bazen böyle yapar) o boşluk bulunamaz. Bölüm dökümden sonra genişletilirse eksik kısım için yeniden
   yazıya dökmek gerekir.
 - Konuşmacı ayırma üst üste konuşmayı ayırmaz: aynı anda konuşulan yerde kelimeler tek kişiye gider. "Evet",
@@ -430,10 +475,16 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - Seslendirmede Türkçe modellerin tek sesi var; konuşmacılar ayrılmaz, her konuşmacı aynı sesle okunur. Orijinal ses
   yalnızca topluca kısılır; konuşma müzikten ayrılmaz. Dudak hareketleriyle eşleşmez. Seslendirme
   **.harfiyen** proje dosyasına girmez; yalnızca bu tarayıcıda projeyle birlikte saklanır.
-- İngilizce seslendirme Türkçeden uzun olabilir; sıkışık konuşmalarda cümleler Türkçesinden birkaç yüz
-  milisaniye geç başlayabilir. Seslendirmeyi takip eden altyazıda kelime zamanları harf sayısından tahmin edilir.
-- Çeviri yalnızca Türkçe ile İngilizce arasında. Çevrilmiş kelimelerin kendi zamanı yok, bu yüzden "Sesle vurgula" çeviride
-  çalışmaz. Yemek adları, özel adlar ve argo yanlış çevrilebilir.
+- Çeviri seslendirmesi aslından uzun olabilir; sıkışık konuşmalarda cümleler aslından birkaç yüz milisaniye geç
+  başlayabilir. Seslendirmeyi takip eden altyazıda kelime zamanları harf sayısından tahmin edilir.
+- Whisper'ın 31 dilinden 21'i deneysel; yalnızca kelimeler arasında boşluk olan, soldan sağa yazılan diller listede
+  (Çince, Japonca, Arapça, İbranice yok).
+- Çeviri yalnızca altı dil arasında (Türkçe, İngilizce, Almanca, Fransızca, İspanyolca, Rusça); İngilizce olmayan
+  çiftler İngilizce üzerinden çevrildiği için daha çok hata içerebilir. Çevrilmiş kelimelerin kendi zamanı yok, bu
+  yüzden "Sesle vurgula" çeviride çalışmaz; çeviri gösterilirken metinden kesilmez ve bip'lenmez. Yemek adları, özel
+  adlar ve argo yanlış çevrilebilir.
+- Bip yalnızca kelimenin zamanına göre konur (iki yanına 0,07 sn pay eklenir); zamanı kaymış kelimede ilk ya da son
+  ses duyulabilir. Kinetik tipografide buzlama ve bant çizilemez, yerine yıldız kullanılır.
 - Ses dosyalarından üretilen MP4'te ses AAC ile kodlanır; tarayıcı AAC kodlayamıyorsa Opus kullanılır.
   Opus'lu MP4'ü QuickTime ve iPhone Fotoğraflar açmayabilir (Chrome, VLC ve sosyal platformlar açar).
 
@@ -460,8 +511,8 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - [ ] **Konuşmacıya göre altyazı ve ses:** altyazı rengi ya da konumu konuşmacıya göre (vurgu rengiyle
       karışmayacak şekilde); seslendirmede konuşmacı başına ses.
 - [x] **Jump cut:** sessizlikleri ve dolgu seslerini ("ııı", "eee") kesme.
-- [ ] **Transkriptten kesme:** kelime ya da cümle silince videodan da kesilmesi; tek tek kesimi geri alma.
-- [ ] **Değişken yazı tipleri için kalınlık ve italik:** yüklenen ve hazır değişken yazı tiplerinde kalınlık
+- [x] **Transkriptten kesme:** kelime ya da cümle silince videodan da kesilmesi; tek tek kesimi geri alma.
+- [x] **Değişken yazı tipleri için kalınlık ve italik:** yüklenen ve hazır değişken yazı tiplerinde kalınlık
       kaydırıcısı (yazı tipinin kendi aralığında) ve italik anahtarı.
 
 ---
@@ -476,6 +527,12 @@ Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphanel
   ondaki formatter ile yapılır (CC BY-SA 4.0; [ytu-ce-cosmos/turkish-small-bert-uncased](https://huggingface.co/ytu-ce-cosmos/turkish-small-bert-uncased)
   üzerine, MIT); çalıştırma adımları [sedalib](https://github.com/atasoglu/seda)'den (Apache-2.0) uyarlandı.
 - [KaanAydinli/Duyu-small](https://huggingface.co/KaanAydinli/Duyu-small): Apache-2.0.
+- Mihu konuşma tanıma modeli [mihuai/turkish-stt-66m-v2](https://huggingface.co/mihuai/turkish-stt-66m-v2):
+  **Powered by mihu.** mihu Community License 1.0; açık kaynak değildir, MIT kapsamına girmez. Yıllık geliri
+  500.000 doların altında olanlara ücretsizdir (ticari kullanımda mihu kayıt isteyebilir); üstündekiler için mihu ile
+  ayrı anlaşma gerekir (support@mihu.ai). Rakip bir konuşma ya da genel amaçlı model eğitmekte kullanılamaz. Lisans
+  metni modelle birlikte `LICENSE` ve `NOTICE` dosyalarında gelir. WebGPU için `scripts/prepare_models.py` ile
+  dönüştürülür.
 - [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) (MIT), ONNX
   sürümü [onnx-community](https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped);
   kelime zamanlama [openai-whisper](https://github.com/openai/whisper)'dan (MIT) uyarlandı.
@@ -485,7 +542,16 @@ Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphanel
 - [Silero VAD](https://github.com/snakers4/silero-vad) v5 (Whisper) ve v6 (Seda, seda-v0.2 ile gelir): MIT.
 - Çeviri modelleri [Helsinki-NLP/opus-mt-tc-big-tr-en](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-tr-en)
   ve [Helsinki-NLP/opus-mt-tc-big-en-tr](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-tr) (OPUS-MT,
-  Tatoeba Challenge): CC-BY 4.0. ONNX'e `scripts/prepare_models.py` ile dönüştürülür.
+  Tatoeba Challenge): CC-BY 4.0. Diğer diller Helsinki-NLP'nin OPUS-MT modelleriyle çevrilir:
+  [opus-mt-en-de](https://huggingface.co/Helsinki-NLP/opus-mt-en-de) ve
+  [opus-mt-ru-en](https://huggingface.co/Helsinki-NLP/opus-mt-ru-en) CC-BY 4.0;
+  [opus-mt-de-en](https://huggingface.co/Helsinki-NLP/opus-mt-de-en),
+  [opus-mt-en-fr](https://huggingface.co/Helsinki-NLP/opus-mt-en-fr),
+  [opus-mt-fr-en](https://huggingface.co/Helsinki-NLP/opus-mt-fr-en),
+  [opus-mt-en-es](https://huggingface.co/Helsinki-NLP/opus-mt-en-es),
+  [opus-mt-es-en](https://huggingface.co/Helsinki-NLP/opus-mt-es-en) ve
+  [opus-mt-en-ru](https://huggingface.co/Helsinki-NLP/opus-mt-en-ru) Apache-2.0. Hepsi ONNX'e
+  `scripts/prepare_models.py` ile dönüştürülür.
 - Seslendirme modeli [canberkkkkkk/ema-lightning](https://huggingface.co/canberkkkkkk/ema-lightning):
   Apache-2.0; metin normalleştirme [normalizer-tr](https://github.com/erdemtuna/normalizer-tr) (Apache-2.0).
 - İkinci seslendirme modeli Antalia-2 Mini, Patientdesk.ai,

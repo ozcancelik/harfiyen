@@ -897,6 +897,8 @@ def prepare_mihu(cache: Path, seda_cache: Path) -> None:
     externalize_pad_mask(dst_enc)
     for f in ["decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt", "LICENSE"]:
         shutil.copy(cache / f, MIHU_OUT / f)
+    # The mihu Community License (section 4) asks for the license text in a NOTICE file next to the model.
+    shutil.copy(cache / "LICENSE", MIHU_OUT / "NOTICE")
     shutil.copy(vad_src, MIHU_OUT / "silero_vad.onnx")
 
     enc = meta(cache / "encoder.int8.onnx")

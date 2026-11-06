@@ -2,6 +2,46 @@
 
 Yeni sürümler en üstte.
 
+## v0.6.0 (6 Kasım 2026)
+
+- **Metinden kurgu:** Transkriptte kelime seçip **Delete** (ya da **Alt+tıkla**) ile videodan kesilir. **Kurgu**
+  modunda kelimeye tıklamak ya da üstünden sürüklemek yeter. Satırın makas düğmesi bütün satırı keser, kelimeler
+  arasındaki **⏸** rozetleri tek tek sessizliği kısaltır. Kesilen yerler üstü çizili kalır, tekrar tıklayınca geri
+  gelir; ⌘Z / Ctrl+Z ile de geri alınır. Oynatıcı, video, SRT ve VTT kesilmiş hâli kullanır.
+- **Kelime bip'leme:** Transkriptte seçilen kelimeler **B** ile (ya da **Kelimeyi bip'le** ile) bip sesiyle
+  değiştirilir. Kelimenin sesi tamamen gider. Altyazıda nasıl görüneceği **Altyazı → Bip'lenen kelimeler**'den
+  seçilir: **Yıldız** (s****), **Buzlama** (mozaik), **Bant**, **Gizle** ya da **Açık**. SRT ve VTT'de buzlama ve bant
+  yıldız olarak yazılır.
+- **Mihu:** [mihuai/turkish-stt-66m-v2](https://huggingface.co/mihuai/turkish-stt-66m-v2) Türkçe konuşma tanıma
+  modeli eklendi (~70 MB). Çok hızlı ve düşük gecikmelidir, canlı mikrofonda ve her cihazda çalışır.
+- **Whisper ile 31 dil:** **Videodaki dil** iki düğmeden açılır menüye geçti. Whisper Türkçe ve İngilizcenin yanında
+  Almanca, Fransızca, İspanyolca, İtalyanca, Portekizce, Hollandaca, Rusça, Lehçe ve 21 dilde daha yazıya döker
+  (bu 21 dil deneysel). Seda, Mihu ve Duyu yalnızca Türkçe bilir; başka bir dil seçilince model Whisper Turbo
+  Hafif'e geçer.
+- **Çeviri altı dil arasında:** Türkçe, İngilizce, Almanca, Fransızca, İspanyolca ve Rusça arasında çevrilir;
+  **Hedef dil** menüden seçilir. İngilizce olmayan çiftler İngilizce üzerinden iki adımda çevrilir. Çeviri
+  seslendirmesi (Supertonic 3) bu dillerin hepsinde okur.
+- **Kalınlık, italik ve harf aralığı:** Altyazıya üç yeni ayar geldi. Kalınlık, değişken yazı tiplerinde (Montserrat,
+  Inter, Schibsted Grotesk, Literata ve yüklediğin değişken yazı tipleri) kendi aralığında ayarlanır. Gerçek italiği
+  olan yazı tiplerinde italik kendi dosyasıyla, diğerlerinde eğilerek çizilir.
+- **Arka planda video:** **Sahne → Arka plan**'a fotoğrafın yanında video da (MP4, WebM, MOV; en fazla 250 MB)
+  konabilir. Sessiz ve döngüde oynar, kareyi kaplar; **Net** ya da **Bulanık** seçilir.
+- **Çevrimdışı çalışma:** Uygulama bir kez açıldıktan sonra internet olmadan da açılır. Yeni sürüm yayınlanınca
+  üstte **Yeni sürüm hazır** bildirimi çıkar; yenileyince yeni sürüme geçilir.
+- **Sekmede ilerleme:** Yazıya dökme ve dışa aktarma sürerken ilerleme sekme başlığında ve favicon'da görünür;
+  başka sekmedeyken de takip edilir.
+- **MCP sunucusu:** Harfiyen'in motorları [MCP](https://modelcontextprotocol.io) sunucusu olarak da çalışır
+  (`harfiyen-mcp`, ayrıntılar [mcp/README.md](mcp/README.md)'de). Yazıya döküm, çeviri, konuşmacı ayırma,
+  seslendirme, metinden kurgu, bip'leme ve altyazılı video Claude Code gibi yapay zeka araçlarından kullanılabilir.
+- Dil rozetleri, GitHub düğmesinde yıldız sayısı ve `llms.txt` eklendi.
+
+**Düzeltmeler**
+
+- Başka dile yeniden çevirip geri alınca çeviri artık eski diliyle geri geliyor.
+- Videodaki dil yeni dosyada ve yeni projede Türkçeye dönüyor; önceki projeninki hatırlanmıyor.
+- Service worker yalnızca bu sürümün dosyalarını önbelleğe alıyor; sunucunun döndürdüğü yedek sayfa artık script ya
+  da manifest diye saklanmıyor.
+
 ## v0.5.0 (23 Ekim 2026)
 
 Bu sürümdeki zaman düzenleme, metni sese hizalama ve elle tempo tutma
