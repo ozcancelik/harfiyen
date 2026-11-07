@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Harfiyen MCP: Videoyu yapay zekaya anlatarak kurgula</title>
+    <meta name="description" content="Harfiyen'in yazıya döküm, metinden kurgu, bip'leme, çeviri, seslendirme ve altyazılı video motorları MCP sunucusu olarak. Claude Code, Codex ve diğer MCP istemcilerine tek komutla eklenir; ses ve video bilgisayarından çıkmaz." />
+    <link rel="canonical" href="https://harfiyen.dev/mcp" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://harfiyen.dev/mcp" />
+    <meta property="og:title" content="Harfiyen MCP: Videoyu yapay zekaya anlatarak kurgula" />
+    <meta property="og:description" content="Yazıya dök, ee'leri at, isimleri bip'le, çevir, seslendir, altyazıyı videoya yaz. Hepsi bilgisayarında." />
+    <meta property="og:image" content="https://harfiyen.dev/mcp/og.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://harfiyen.dev/mcp/og.jpg" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#14171a" />
+    <script>
+      // Uygulamanın kayıtlı teması (src/lib/theme.ts), ilk boyamadan önce.
+      try {
+        var t = localStorage.getItem("harfiyen.theme");
+        var light = t === "light" || (t !== "dark" && matchMedia("(prefers-color-scheme: light)").matches);
+        document.documentElement.dataset.theme = light ? "light" : "dark";
+      } catch (e) {}
+    </script>
+    <style>
+      @font-face {
+        font-family: "Inter Variable";
+        font-style: normal;
+        font-display: swap;
+        font-weight: 100 900;
+        src: url("/mcp/inter-latin-ext-wght-normal.woff2") format("woff2-variations");
+        unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+      }
+      @font-face {
+        font-family: "Inter Variable";
+        font-style: normal;
+        font-display: swap;
+        font-weight: 100 900;
+        src: url("/mcp/inter-latin-wght-normal.woff2") format("woff2-variations");
+        unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      }
+      /* Uygulamanın renkleri (src/styles.css). */
+      :root,
+      [data-theme="dark"] {
+        --bg: #14171a;
+        --well: #101316;
+        --line: #2e353e;
+        --text: #e6ebf0;
+        --text-2: #98a2ad;
+        --text-3: #65707b;
+        --strong: #fff;
+        --cini: #476de6;
+        --cini-press: #395cd4;
+        --link: #8fa6f2;
+      }
+      [data-theme="light"] {
+        --bg: #eef1f4;
+        --well: #e4e8ed;
+        --line: #d6dce3;
+        --text: #161b21;
+        --text-2: #56616d;
+        --text-3: #87919c;
+        --strong: #06080b;
+        --cini: #476de6;
+        --cini-press: #395cd4;
+        --link: #3657c7;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 400 16px/1.6 "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: var(--link);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      code,
+      pre {
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 0.875em;
+      }
+      .wrap {
+        max-width: 820px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      header .wrap {
+        display: flex;
+        align-items: center;
+        height: 60px;
+      }
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-2);
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .logo:hover {
+        text-decoration: none;
+      }
+      .logo img {
+        height: 22px;
+        display: block;
+      }
+      header nav {
+        margin-left: auto;
+        display: flex;
+        gap: 20px;
+        font-size: 14px;
+      }
+      header nav a {
+        color: var(--text-2);
+      }
+      header nav a:hover {
+        color: var(--strong);
+        text-decoration: none;
+      }
+      [data-theme="dark"] .logo-light,
+      [data-theme="light"] .logo-dark {
+        display: none !important;
+      }
+
+      h1 {
+        margin: 56px 0 0;
+        font-size: clamp(30px, 5vw, 42px);
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        font-weight: 700;
+        color: var(--strong);
+      }
+      .lead {
+        margin: 16px 0 0;
+        max-width: 620px;
+        font-size: 18px;
+        color: var(--text-2);
+      }
+      .cmd {
+        margin: 28px 0 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 8px 8px 16px;
+        background: var(--well);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .cmd code {
+        flex: 1;
+        min-width: 0;
+        overflow-x: auto;
+        white-space: nowrap;
+        scrollbar-width: none;
+      }
+      .cmd code::-webkit-scrollbar {
+        display: none;
+      }
+      .copy {
+        flex: none;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1;
+        color: #fff;
+        background: var(--cini);
+        border: 0;
+        border-radius: 7px;
+        padding: 10px 14px;
+        cursor: pointer;
+      }
+      .copy:hover {
+        background: var(--cini-press);
+      }
+      .note {
+        margin: 10px 0 0;
+        font-size: 14px;
+        color: var(--text-3);
+      }
+
+      video {
+        display: block;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        object-fit: cover;
+        margin-top: 32px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #0f1215;
+      }
+
+      section {
+        margin-top: 64px;
+      }
+      h2 {
+        margin: 0;
+        font-size: 22px;
+        letter-spacing: -0.01em;
+        font-weight: 680;
+        color: var(--strong);
+      }
+      section > p,
+      section > ul,
+      section > ol {
+        margin: 12px 0 0;
+        color: var(--text-2);
+      }
+      section ul,
+      section ol {
+        padding-left: 20px;
+      }
+      section li {
+        padding: 3px 0;
+      }
+      section li b {
+        color: var(--text);
+        font-weight: 600;
+      }
+      blockquote {
+        margin: 16px 0 0;
+        padding: 2px 0 2px 16px;
+        border-left: 3px solid var(--cini);
+        color: var(--text);
+      }
+      .steps code {
+        color: var(--text);
+      }
+      .caption {
+        margin: 10px 0 0;
+        font-size: 14px;
+        color: var(--text-3);
+      }
+      pre {
+        margin: 12px 0 0;
+        padding: 14px 16px;
+        background: var(--well);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow-x: auto;
+        line-height: 1.5;
+      }
+
+      footer {
+        margin-top: 80px;
+        border-top: 1px solid var(--line);
+        padding: 20px 0 40px;
+        font-size: 14px;
+        color: var(--text-3);
+      }
+      footer .wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 20px;
+      }
+      footer a {
+        color: var(--text-2);
+      }
+
+      @media (max-width: 600px) {
+        .wrap {
+          padding: 0 16px;
+        }
+        h1 {
+          margin-top: 36px;
+        }
+        .lead {
+          font-size: 17px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap">
+        <a class="logo" href="/" aria-label="Harfiyen">
+          <img class="logo-dark" src="/brand/harfiyen-logo-light.png" alt="Harfiyen" />
+          <img class="logo-light" src="/brand/harfiyen-logo.png" alt="Harfiyen" />
+          MCP
+        </a>
+        <nav>
+          <a href="https://github.com/ozcancelik/harfiyen/tree/main/mcp">GitHub</a>
+          <a href="/">Uygulama</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <h1>Videoyu yapay zekaya anlatarak kurgula.</h1>
+      <p class="lead">
+        Harfiyen'in yazıya döküm, kurgu, bip'leme, çeviri, seslendirme ve altyazı motorları MCP sunucusu olarak çalışır.
+        Ses ve video bilgisayarından çıkmaz.
+      </p>
+      <div class="cmd">
+        <code class="c">claude mcp add harfiyen -- npx -y harfiyen-mcp</code>
+        <button class="copy" type="button">Kopyala</button>
+      </div>
+      <p class="note">Claude Code için. Codex, Cursor ve Claude Desktop'ta da çalışır, <a href="#kurulum">Kurulum</a>'a bak.</p>
+      <video src="/mcp/terminal.mp4" poster="/mcp/terminal.jpg" autoplay muted loop playsinline preload="auto" aria-label="Claude Code'da Harfiyen MCP araçlarının çalışması"></video>
+
+      <section>
+        <h2>Bir cümle, bitmiş bir video</h2>
+        <blockquote>
+          klip.mp4'ün ilk 26 saniyesindeki ee'leri ve boşlukları at, isimleri bip'le, vurgu stilinde altyazılı video yap.
+        </blockquote>
+        <ol class="steps">
+          <li><code>transcribe</code>: 54 kelime, Türkçe</li>
+          <li><code>cut_words</code>: 2 kelime ve 6 boşluk kesildi</li>
+          <li><code>bleep_words</code>: 9 kelime bip'lendi</li>
+          <li><code>render_captions</code>: 1920x1080, 22,7 sn</li>
+        </ol>
+        <p class="caption">Hangi aracın hangi sırayla çağrılacağına yapay zeka karar verir.</p>
+      </section>
+
+      <section>
+        <h2>Neler yapar</h2>
+        <p>
+          Web uygulamasıyla aynı kod ve aynı modeller. Uygulamada kaydettiğin <code>.harfiyen</code> projesi MCP'de,
+          MCP'de yaptığın iş uygulamada açılır.
+        </p>
+        <ul>
+          <li><b>Yazıya döküm:</b> kelime zamanlı ve noktalamalı. Türkçede Seda, Mihu ve Duyu; Whisper ile 31 dil.</li>
+          <li><b>Metinden kurgu:</b> kelimeyi silince videodan kesilir. Dolgu sesleri ve uzun duraklar da gider.</li>
+          <li><b>Bip'leme:</b> seçilen kelimenin sesi bip olur; altyazıda yıldız, buzlama ya da bant.</li>
+          <li><b>Altyazılı video:</b> dokuz stil, kinetik tipografi; 9:16, 4:5, 1:1 ve 16:9 kadraj.</li>
+          <li><b>Çeviri ve seslendirme:</b> Türkçe, İngilizce, Almanca, Fransızca, İspanyolca ve Rusça.</li>
+          <li><b>Konuşmacılar:</b> kimin ne zaman konuştuğu ayrılır, adlar altyazıya yazılır.</li>
+        </ul>
+        <p>Bütün araçlar ve ayarlar <a href="https://github.com/ozcancelik/harfiyen/tree/main/mcp">README</a>'de.</p>
+      </section>
+
+      <section id="kurulum">
+        <h2>Kurulum</h2>
+        <ul>
+          <li>Node 20 ya da üstü, PATH'te <code>ffmpeg</code> ve <code>ffprobe</code>.</li>
+          <li>Altyazılı video için Google Chrome; yoksa video ffmpeg ile yazılır.</li>
+          <li>Modeller ilk kullanımda, sen onaylayınca <code>~/.harfiyen-mcp</code> klasörüne bir kez iner.</li>
+        </ul>
+        <p>Codex'e eklemek için:</p>
+        <pre>codex mcp add harfiyen -- npx -y harfiyen-mcp</pre>
+        <p>Claude Desktop, Cursor ve diğer MCP istemcilerinde yapılandırmaya şunu ekle:</p>
+        <pre>{
+  "mcpServers": {
+    "harfiyen": { "command": "npx", "args": ["-y", "harfiyen-mcp"] }
+  }
+}</pre>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span>Harfiyen, açık kaynak (MIT)</span>
+        <a href="/">harfiyen.dev</a>
+        <a href="https://github.com/ozcancelik/harfiyen/tree/main/mcp">GitHub</a>
+        <a href="https://www.npmjs.com/package/harfiyen-mcp">npm</a>
+      </div>
+    </footer>
+
+    <script>
+      document.querySelectorAll(".copy").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var text = btn.parentElement.querySelector(".c").textContent;
+          var done = function () {
+            btn.textContent = "Kopyalandı";
+            setTimeout(function () {
+              btn.textContent = "Kopyala";
+            }, 1600);
+          };
+          if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {});
+        });
+      });
+    </script>
+  </body>
+</html>

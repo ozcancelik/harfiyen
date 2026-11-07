@@ -27,6 +27,22 @@ Claude Code'a eklemek için:
 claude mcp add harfiyen -- npx -y harfiyen-mcp
 ```
 
+Codex'e eklemek için:
+
+```sh
+codex mcp add harfiyen -- npx -y harfiyen-mcp
+```
+
+Claude Desktop, Cursor ve diğer MCP istemcilerinde yapılandırmaya:
+
+```json
+{
+  "mcpServers": {
+    "harfiyen": { "command": "npx", "args": ["-y", "harfiyen-mcp"] }
+  }
+}
+```
+
 Depodan çalıştırmak için (geliştirme):
 
 ```sh
@@ -83,7 +99,7 @@ Kadraj, seslendirme (`original_volume`), boşluk kesme, `hidden` (yazısız vide
 belleğe değil tarayıcının özel diskine (OPFS) akıtılır, uzun videolar bellek tutmaz; seslendirme sesi ise bütün olarak
 belleğe alınır (saatlik bir videoda yaklaşık 1 GB). İlk kullanımda `../src` ve `render-host/` Vite ile derlenip
 `~/.harfiyen-mcp/render-host` altına konur (birkaç saniye); kod değişince kendiliğinden yeniden derlenir. Chrome'un yolu
-`CHROME` ile verilebilir. Şimdilik yalnızca macOS'ta denendi. Chrome yolunda `size` uygulamanın boyudur (kısa kenarın
+`CHROME` ile verilebilir. Chrome yolunda `size` uygulamanın boyudur (kısa kenarın
 payı), `bold` yoktur: kalınlık için `weight` (100–900, yalnızca değişken yazı tiplerinde), eğiklik için `italic`, harf aralığı için `tracking` (em) kullanılır. ffmpeg yolunda `italic` ve `tracking` çalışır, `weight` yalnızca kalın/normal olur. Google Chrome H.264 kodlayıcısını içerir; bazı Chromium sürümleri içermez.
 
 ## Altyazı stilleri ve yazı tipleri

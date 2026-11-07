@@ -68,6 +68,8 @@ export default defineConfig(({ mode }) => {
           const full = join(dir, entry);
           const path = rel ? `${rel}/${entry}` : entry;
           if (statSync(full).isDirectory()) {
+            // The /mcp page is a site page, not part of the app: its videos stay off every user's precache.
+            if (path === "mcp") continue;
             walk(full, path);
             continue;
           }
@@ -167,7 +169,8 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(req)
         .then(async (res) => {
-          const key = req.mode === "navigate" ? "/index.html" : url.pathname;
+          // The app's page is kept as /index.html; another page (/mcp) under its own path, so it never takes the app's place.
+          const key = req.mode === "navigate" && (url.pathname === "/" || url.pathname === "/index.html") ? "/index.html" : url.pathname;
           if (keep(res, key)) {
             const cache = await caches.open(CACHE_NAME);
             cache.put(key, cleanResponse(res.clone())).catch(() => {});

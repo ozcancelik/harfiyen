@@ -2308,7 +2308,17 @@ export function App() {
                           </>
                         )}
                       </>
-                    )}
+                    )}{" "}
+                    Claude Code ya da Codex'ten kullanmak istersen{" "}
+                    <a
+                      className="text-wave-played underline underline-offset-[0.18em]"
+                      href="https://harfiyen.dev/mcp"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      MCP sunucusu
+                    </a>{" "}
+                    da var.
                   </>
                 }
               >

@@ -2,7 +2,7 @@
 
 Yeni sürümler en üstte.
 
-## v0.6.0 (6 Kasım 2026)
+## v0.6.0 (7 Kasım 2026)
 
 - **Metinden kurgu:** Transkriptte kelime seçip **Delete** (ya da **Alt+tıkla**) ile videodan kesilir. **Kurgu**
   modunda kelimeye tıklamak ya da üstünden sürüklemek yeter. Satırın makas düğmesi bütün satırı keser, kelimeler

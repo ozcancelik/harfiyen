@@ -7,6 +7,7 @@ const LINKS = [
   { label: "harfiyen.dev", href: "https://harfiyen.dev" },
   { label: "Kaynak kod", href: REPO },
   { label: "Sürüm notları", href: `${REPO}/blob/main/CHANGELOG.md` },
+  { label: "MCP sunucusu", href: "https://harfiyen.dev/mcp" },
   { label: "Hata bildir", href: `${REPO}/issues` },
 ];
 
