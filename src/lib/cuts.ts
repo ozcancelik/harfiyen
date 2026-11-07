@@ -278,7 +278,10 @@ export function findCuts(
     const cutSilence = manualGapCut || (jc.on && !manualGapKeep);
 
     if (cutSilence) {
-      for (const q of quietRuns(a, b, loudness, below, cutWords)) {
+      // A gap cut by hand goes whole, sound and all: an "eee" or a breath with no word of its own is loud, and
+      // would otherwise keep the gap. The automatic cut takes only the quiet runs.
+      const runs = manualGapCut ? quietRuns(a, b, loudness, null, cutWords) : quietRuns(a, b, loudness, below, cutWords);
+      for (const q of runs) {
         const inside = cutWords.filter((f) => f.end > q.start && f.start < q.end);
         // The span's own ends are not speech: cut right up to them.
         let s = q.start <= span.start + 1e-3 ? span.start : q.start + jc.pad;

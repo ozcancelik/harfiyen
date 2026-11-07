@@ -138,50 +138,63 @@ export class CaptionRenderer {
     return { ...this.cached, scale };
   }
 
-  /** A mosaic or a bar over the word's place: from `tx` on, `w` wide, centred on `cy`; `seed` sets the mosaic's tones. */
-  private censorWord(
+  /**
+   * Buzlama: the word's place drawn as the caption would draw it (same font, colour and outline), then
+   * pixelated into blocks about a fifth of a letter's height, so it reads as a word that cannot be read.
+   * `text` is the placeholder from censorWords: the word itself never reaches the picture.
+   */
+  private pixelWord(
     ctx: OffscreenCanvasRenderingContext2D,
-    mode: "blur" | "bar",
-    seed: number,
+    text: string,
+    color: string,
+    stroke: number,
     tx: number,
+    ty: number,
     cy: number,
     w: number,
     lh: number,
     px: number,
   ) {
+    const padX = stroke + px * 0.06;
+    const x0 = Math.floor(tx - padX);
+    const y0 = Math.floor(cy - lh / 2);
+    const bw = Math.ceil(w + padX * 2);
+    const bh = Math.ceil(lh);
+    const full = new OffscreenCanvas(bw, bh);
+    const f = full.getContext("2d")!;
+    f.font = ctx.font;
+    if ("letterSpacing" in ctx) f.letterSpacing = ctx.letterSpacing;
+    f.textBaseline = ctx.textBaseline;
+    f.lineJoin = ctx.lineJoin;
+    if (stroke) {
+      f.strokeStyle = "rgba(0, 0, 0, 0.92)";
+      f.lineWidth = stroke * 2;
+      f.strokeText(text, tx - x0, ty - y0);
+    }
+    f.fillStyle = color;
+    f.fillText(text, tx - x0, ty - y0);
+    // Down to one pixel per block (averaging the letters into greys), then back up without smoothing.
+    const cell = Math.max(2, Math.round(px * 0.15));
+    const small = new OffscreenCanvas(Math.max(1, Math.round(bw / cell)), Math.max(1, Math.round(bh / cell)));
+    const sc = small.getContext("2d")!;
+    sc.imageSmoothingQuality = "high";
+    sc.drawImage(full, 0, 0, small.width, small.height);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(small, x0, y0, bw, bh);
+    ctx.imageSmoothingEnabled = true;
+  }
+
+  /** A bar over the word's place: from `tx` on, `w` wide, centred on `cy`. */
+  private censorWord(ctx: OffscreenCanvasRenderingContext2D, tx: number, cy: number, w: number, lh: number, px: number) {
     const padX = px * 0.08;
     const h = lh * 0.78;
     ctx.beginPath();
     ctx.roundRect(tx - padX, cy - h / 2, w + padX * 2, h, h * 0.3);
-    if (mode === "bar") {
-      ctx.fillStyle = "#0b0f14";
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
-      ctx.lineWidth = Math.max(1, px * 0.03);
-      ctx.stroke();
-      return;
-    }
-    // Mosaic: square blocks of greys across the word's place, about a quarter of a letter's height. Their tones
-    // come from a hash of the block's place and the word's, so they hold still from frame to frame.
-    const cell = Math.max(2, Math.round(px * 0.17));
-    const x0 = tx - padX;
-    const y0 = cy - h / 2;
-    const cols = Math.max(1, Math.round((w + padX * 2) / cell));
-    const rows = Math.max(1, Math.round(h / cell));
-    const bw = (w + padX * 2) / cols;
-    const bh = h / rows;
-    ctx.save();
-    ctx.clip();
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        let n = Math.imul(c + 1, 73856093) ^ Math.imul(r + 1, 19349663) ^ Math.imul(seed + 1, 83492791);
-        n = Math.imul(n ^ (n >>> 13), 1274126177);
-        const v = 70 + ((n ^ (n >>> 16)) & 0xff) * 0.55;
-        ctx.fillStyle = `rgb(${v | 0}, ${(v + 4) | 0}, ${(v + 10) | 0})`;
-        ctx.fillRect(x0 + c * bw, y0 + r * bh, bw + 0.5, bh + 0.5);
-      }
-    }
-    ctx.restore();
+    ctx.fillStyle = "#0b0f14";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+    ctx.lineWidth = Math.max(1, px * 0.03);
+    ctx.stroke();
   }
 
   private groupAt(t: number): number {
@@ -312,6 +325,8 @@ export class CaptionRenderer {
           continue;
         }
         const isActive = i === active;
+        // A censored word has no box or accent of its own: pixels or a bar stand in its place.
+        const censored = !!g.words[i].bleep && (s.censor === "blur" || s.censor === "bar");
         let color = s.textColor;
         ctx.globalAlpha = preset.effect === "karaoke" && i > active ? 0.45 : 1;
         ctx.save();
@@ -347,7 +362,7 @@ export class CaptionRenderer {
           }
         }
 
-        if (preset.effect === "box" && isActive) {
+        if (preset.effect === "box" && isActive && !censored) {
           ctx.fillStyle = s.accentColor;
           ctx.beginPath();
           ctx.roundRect(x, cy - lh * 0.47, widths[i] + wordPad * 2, lh * 0.94, px * 0.18);
@@ -360,9 +375,10 @@ export class CaptionRenderer {
         const tx = x + wordPad;
         const ty = cy + (capH * size[i]) / 2;
         const boxed = preset.effect === "box" && isActive;
-        if (g.words[i].bleep && (s.censor === "blur" || s.censor === "bar")) {
-          // The word is not drawn: a mosaic or a bar in its place (the text is only a stand-in for its width).
-          this.censorWord(ctx, s.censor, Math.round(g.words[i].start * 1000), tx, cy, widths[i], lh, px * size[i]);
+        if (censored) {
+          // The word is not drawn: pixelated or a bar in its place (the text is only a stand-in for its width).
+          if (s.censor === "blur") this.pixelWord(ctx, texts[i], color, stroke * size[i], tx, ty, cy, widths[i], lh, px * size[i]);
+          else this.censorWord(ctx, tx, cy, widths[i], lh, px * size[i]);
           ctx.restore();
           x += widths[i] + wordPad * 2 + space;
           continue;

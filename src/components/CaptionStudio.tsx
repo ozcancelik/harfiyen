@@ -81,7 +81,7 @@ const POSITIONS = [
 
 const CENSORS = [
   { value: "stars" as const, label: "Yıldız", note: "Kelime s**** diye yazılır" },
-  { value: "blur" as const, label: "Buzlama", note: "Kelimenin yerinde kareli mozaik durur" },
+  { value: "blur" as const, label: "Buzlama", note: "Kelimenin yeri pikselleşir, okunmaz" },
   { value: "bar" as const, label: "Bant", note: "Kelimenin üstünde koyu bir şerit" },
   { value: "hide" as const, label: "Gizle", note: "Kelime altyazıda hiç görünmez" },
   { value: "off" as const, label: "Açık", note: "Yazı olduğu gibi kalır, yalnız ses bip'lenir" },
