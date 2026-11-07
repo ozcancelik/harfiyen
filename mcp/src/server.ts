@@ -675,7 +675,7 @@ server.registerTool(
   {
     title: "Kelime bip'le (sansür)",
     description:
-      "Seçilen kelimelerin sesini bip sesiyle değiştirir (konuşma bip'in altında karışmaz, tamamen gider). Kelimeler transkriptte durur, bip'li olarak işaretlenir (get_transcript lines çıktısında ♪kelime♪); render_captions sesi bip'ler, altyazıda da kelimeyi gizler (censor ile yıldız, mozaik, bant, gizle ya da açık). export_transcript çıktıları (srt, vtt, text, json) da maskelenir.\n" +
+      "Seçilen kelimelerin sesini bip sesiyle değiştirir (konuşma bip'in altında karışmaz, tamamen gider). Kelimeler transkriptte durur, bip'li olarak işaretlenir (get_transcript lines çıktısında ♪kelime♪); render_captions sesi bip'ler, altyazıda da kelimeyi gizler (censor ile yıldız, pikselleştirme, bant, gizle ya da açık). export_transcript çıktıları (srt, vtt, text, json) da maskelenir.\n" +
       "- mode='add': ranges (kelime sırası ya da zaman) ve/ya da words (kelime metni; bütün transkriptte eşleşenler) bip'lenir.\n" +
       "- mode='remove': aynı seçimdeki bip'ler kaldırılır.\n" +
       "- mode='reset': bütün bip'ler kaldırılır.\n" +
@@ -990,7 +990,7 @@ server.registerTool(
       color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
       accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Vurgu rengi (karaoke dolgusu, vurgu kutusu)"),
       speaker_names: z.boolean().optional().describe("Konuşan değişince adı yazılsın (varsayılan: proje ne diyorsa, yoksa açık)"),
-      censor: z.enum(["stars", "blur", "bar", "hide", "off"]).optional().describe("bleep_words ile bip'lenen kelime altyazıda nasıl görünsün: stars yıldız (s****), blur mozaik, bar bant, hide hiç yazma, off olduğu gibi yaz (yalnızca ses bip'lenir). blur ve bar yalnızca Chrome yolunda çizilir (ffmpeg'de ve kinetik tipografide yıldız olur). Varsayılan: proje ne diyorsa, yoksa stars"),
+      censor: z.enum(["stars", "blur", "bar", "hide", "off"]).optional().describe("bleep_words ile bip'lenen kelime altyazıda nasıl görünsün: stars yıldız (s****), blur pikselleştirme (kelimenin yeri yazıyla aynı boyda, aynı renk ve konturla pikselleşir, okunmaz), bar bant, hide hiç yazma, off olduğu gibi yaz (yalnızca ses bip'lenir). blur ve bar yalnızca Chrome yolunda çizilir (ffmpeg'de ve kinetik tipografide yıldız olur). Varsayılan: proje ne diyorsa, yoksa stars"),
       aspect: z.enum(["9:16", "4:5", "1:1", "16:9"]).optional().describe("Kadraj; verilirse projenin kırpma kutusu yok sayılır ve crop_position konumundan kırpılır"),
       crop_position: z.enum(["orta", "sol", "sag", "ust", "alt"]).optional().describe("fill modunda kırpma kutusunun konumu: orta (varsayılan), sol, sag, ust, alt"),
       fit: z.enum(["fill", "fit"]).optional().describe("fill: kareyi kapla, taşanı kes; fit: tamamı görünsün, boşluk siyah ya da bulanık"),

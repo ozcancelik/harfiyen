@@ -6,12 +6,13 @@ Yeni sürümler en üstte.
 
 - **Metinden kurgu:** Transkriptte kelime seçip **Delete** (ya da **Alt+tıkla**) ile videodan kesilir. **Kurgu**
   modunda kelimeye tıklamak ya da üstünden sürüklemek yeter. Satırın makas düğmesi bütün satırı keser, kelimeler
-  arasındaki **⏸** rozetleri tek tek sessizliği kısaltır. Kesilen yerler üstü çizili kalır, tekrar tıklayınca geri
-  gelir; ⌘Z / Ctrl+Z ile de geri alınır. Oynatıcı, video, SRT ve VTT kesilmiş hâli kullanır.
+  arasındaki **⏸** rozetleri tek tek sessizliği kısaltır; boşluktaki "eee" ya da nefes de birlikte gider. Kesilen
+  yerler üstü çizili kalır, tekrar tıklayınca geri gelir; ⌘Z / Ctrl+Z ile de geri alınır. Oynatıcı, video, SRT ve
+  VTT kesilmiş hâli kullanır.
 - **Kelime bip'leme:** Transkriptte seçilen kelimeler **B** ile (ya da **Kelimeyi bip'le** ile) bip sesiyle
   değiştirilir. Kelimenin sesi tamamen gider. Altyazıda nasıl görüneceği **Altyazı → Bip'lenen kelimeler**'den
-  seçilir: **Yıldız** (s****), **Buzlama** (mozaik), **Bant**, **Gizle** ya da **Açık**. SRT ve VTT'de buzlama ve bant
-  yıldız olarak yazılır.
+  seçilir: **Yıldız** (s****), **Buzlama** (kelimenin yeri yazıyla aynı boyda pikselleşir), **Bant**, **Gizle** ya
+  da **Açık**. SRT ve VTT'de buzlama ve bant yıldız olarak yazılır.
 - **Mihu:** [mihuai/turkish-stt-66m-v2](https://huggingface.co/mihuai/turkish-stt-66m-v2) Türkçe konuşma tanıma
   modeli eklendi (~70 MB). Çok hızlı ve düşük gecikmelidir, canlı mikrofonda ve her cihazda çalışır.
 - **Whisper ile 31 dil:** **Videodaki dil** iki düğmeden açılır menüye geçti. Whisper Türkçe ve İngilizcenin yanında

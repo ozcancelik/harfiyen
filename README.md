@@ -134,8 +134,9 @@ canlı çalışır.
   Literata ve yüklediğin değişken yazı tipleri) kendi aralığında ayarlanır. Gerçek italiği olan yazı tiplerinde
   italik kendi dosyasıyla, diğerlerinde eğilerek çizilir.
 - **Bip'lenen kelimeler:** bip'lenen kelimenin altyazıda nasıl görüneceği seçilir: **Yıldız** (s****), **Buzlama**
-  (kelimenin yerinde mozaik), **Bant** (üstünde koyu şerit), **Gizle** ya da **Açık** (yalnızca ses bip'lenir). SRT ve
-  VTT'de buzlama ve bant yıldız olarak yazılır; kinetik tipografide de yıldız kullanılır (bkz. Görüntü ve dışa aktarma).
+  (kelimenin yeri yazıyla aynı boyda pikselleşir), **Bant** (üstünde koyu şerit), **Gizle** ya da **Açık** (yalnızca
+  ses bip'lenir). SRT ve VTT'de buzlama ve bant yıldız olarak yazılır; kinetik tipografide de yıldız kullanılır (bkz.
+  Görüntü ve dışa aktarma).
 - Boyut, konum, zemin (kutu, kontur, gölge), yazı ve vurgu rengi, Türkçe kurallarına uygun büyük harf
   (i → İ).
 - **Altyazıyı göster** kapatılırsa oynatıcıda ve videoda altyazı olmaz; seslendirmeli ama altyazısız video çıkarmak
