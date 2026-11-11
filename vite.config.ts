@@ -68,8 +68,8 @@ export default defineConfig(({ mode }) => {
           const full = join(dir, entry);
           const path = rel ? `${rel}/${entry}` : entry;
           if (statSync(full).isDirectory()) {
-            // The /mcp page is a site page, not part of the app: its videos stay off every user's precache.
-            if (path === "mcp") continue;
+            // Site pages (/mcp, /support, /privacy) and their shared files (/site) are not part of the app: they stay off every user's precache.
+            if (["mcp", "support", "privacy", "site"].includes(path)) continue;
             walk(full, path);
             continue;
           }

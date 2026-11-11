@@ -1,0 +1,367 @@
+/* Shared styles for the site pages (/mcp, /support, /privacy). The app has its own (src/styles.css). */
+
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("/site/inter-latin-ext-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("/site/inter-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* The app's colors (src/styles.css). */
+:root,
+[data-theme="dark"] {
+  --bg: #14171a;
+  --well: #101316;
+  --line: #2e353e;
+  --text: #e6ebf0;
+  --text-2: #98a2ad;
+  --text-3: #65707b;
+  --strong: #fff;
+  --cini: #476de6;
+  --cini-press: #395cd4;
+  --link: #8fa6f2;
+}
+[data-theme="light"] {
+  --bg: #eef1f4;
+  --well: #e4e8ed;
+  --line: #d6dce3;
+  --text: #161b21;
+  --text-2: #56616d;
+  --text-3: #87919c;
+  --strong: #06080b;
+  --cini: #476de6;
+  --cini-press: #395cd4;
+  --link: #3657c7;
+}
+
+* {
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-padding-top: 24px;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 16px/1.6 "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: var(--link);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+code,
+pre {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.875em;
+}
+.wrap {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* Header: logo, page name, then the language switch and links. */
+header .wrap {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 60px;
+}
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 600;
+}
+.logo:hover {
+  text-decoration: none;
+}
+.logo img {
+  height: 22px;
+  display: block;
+}
+.logo span {
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+header nav {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-size: 14px;
+}
+header nav a {
+  color: var(--text-2);
+}
+header nav a:hover {
+  color: var(--strong);
+  text-decoration: none;
+}
+[data-theme="dark"] .logo-light,
+[data-theme="light"] .logo-dark {
+  display: none !important;
+}
+
+/* TR | EN. Without JavaScript nothing is set and both languages show. */
+.langs {
+  display: flex;
+  padding: 2px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.langs button {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+.langs button[aria-pressed="true"] {
+  color: var(--strong);
+  background: var(--line);
+}
+html[data-lang="tr"] [lang="en"],
+html[data-lang="en"] [lang="tr"] {
+  display: none !important;
+}
+html:not([data-lang]) .langs {
+  display: none;
+}
+
+/* Page text. */
+h1 {
+  margin: 56px 0 0;
+  font-size: clamp(30px, 5vw, 42px);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+  color: var(--strong);
+}
+.lead {
+  margin: 16px 0 0;
+  max-width: 620px;
+  font-size: 18px;
+  color: var(--text-2);
+}
+.meta {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: var(--text-3);
+}
+section {
+  margin-top: 56px;
+}
+h2 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  font-weight: 680;
+  color: var(--strong);
+}
+section > p,
+section > ul,
+section > ol {
+  margin: 12px 0 0;
+  color: var(--text-2);
+}
+section ul,
+section ol {
+  padding-left: 20px;
+}
+section li {
+  padding: 3px 0;
+}
+section b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* A short summary at the top of a page. */
+.summary {
+  margin: 32px 0 0;
+  padding: 18px 22px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--cini);
+  border-radius: 10px;
+}
+.summary ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.summary li {
+  padding: 2px 0;
+}
+
+/* Buttons. */
+.actions {
+  margin: 28px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  background: var(--well);
+}
+.btn:hover {
+  text-decoration: none;
+  border-color: var(--text-3);
+}
+.btn.primary {
+  color: #fff;
+  background: var(--cini);
+  border-color: var(--cini);
+}
+.btn.primary:hover {
+  background: var(--cini-press);
+}
+
+/* Questions that open on tap. */
+.faq {
+  margin: 12px 0 0;
+  border-top: 1px solid var(--line);
+}
+.faq details {
+  border-bottom: 1px solid var(--line);
+}
+.faq summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  cursor: pointer;
+  list-style: none;
+  color: var(--text);
+  font-weight: 600;
+}
+.faq summary::-webkit-details-marker {
+  display: none;
+}
+.faq summary::after {
+  content: "+";
+  margin-left: auto;
+  color: var(--text-3);
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 1;
+}
+.faq details[open] summary::after {
+  content: "−";
+}
+.faq details > p {
+  margin: 0;
+  padding: 0 0 16px;
+  color: var(--text-2);
+}
+
+/* A table that turns into stacked rows on phones. */
+.table {
+  width: 100%;
+  margin: 16px 0 0;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.table th {
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-3);
+  padding: 0 12px 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.table td {
+  vertical-align: top;
+  padding: 12px 12px 12px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-2);
+}
+.table td:first-child {
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+footer {
+  margin-top: 96px;
+  border-top: 1px solid var(--line);
+  padding: 20px 0 40px;
+  font-size: 14px;
+  color: var(--text-3);
+}
+footer .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+footer a {
+  color: var(--text-2);
+}
+footer .fnote {
+  margin-right: auto;
+}
+
+@media (max-width: 600px) {
+  .wrap {
+    padding: 0 16px;
+  }
+  h1 {
+    margin-top: 36px;
+  }
+  .lead {
+    font-size: 17px;
+  }
+  header nav a.hide-sm {
+    display: none;
+  }
+  .table thead {
+    display: none;
+  }
+  .table tr {
+    display: block;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .table td {
+    display: block;
+    padding: 2px 0;
+    border: 0;
+  }
+  .table td[data-label]::before {
+    content: attr(data-label) ": ";
+    color: var(--text-3);
+  }
+}

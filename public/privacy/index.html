@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="tr" data-i18n data-title-tr="Gizlilik Politikası · Harfiyen" data-title-en="Privacy Policy · Harfiyen">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Gizlilik Politikası · Harfiyen</title>
+    <meta name="description" content="Harfiyen kişisel veri toplamaz. Ses, video ve metin cihazında işlenir; hesap, reklam, analitik ve takip yoktur. Harfiyen collects no personal data." />
+    <link rel="canonical" href="https://harfiyen.dev/privacy" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#14171a" />
+    <script src="/site/site.js"></script>
+    <link rel="stylesheet" href="/site/site.css" />
+  </head>
+  <body>
+    <header>
+      <div class="wrap">
+        <a class="logo" href="/" aria-label="Harfiyen">
+          <img class="logo-dark" src="/brand/harfiyen-logo-light.png" alt="Harfiyen" />
+          <img class="logo-light" src="/brand/harfiyen-logo.png" alt="Harfiyen" />
+          <span lang="tr">Gizlilik</span><span lang="en">Privacy</span>
+        </a>
+        <nav>
+          <div class="langs" role="group" aria-label="Dil / Language">
+            <button type="button" data-lang="tr" aria-pressed="false">TR</button>
+            <button type="button" data-lang="en" aria-pressed="false">EN</button>
+          </div>
+          <a class="hide-sm" href="/support"><span lang="tr">Destek</span><span lang="en">Support</span></a>
+          <a href="/"><span lang="tr">Uygulama</span><span lang="en">App</span></a>
+        </nav>
+      </div>
+    </header>
+
+    <!-- Türkçe -->
+    <main class="wrap" lang="tr">
+      <h1>Gizlilik Politikası</h1>
+      <p class="lead">Harfiyen kişisel veri toplamaz. Dosyaların cihazında işlenir ve hiçbir yere gönderilmez.</p>
+      <p class="meta">Son güncelleme: 11 Kasım 2026 · Web uygulaması, iOS uygulaması ve MCP sunucusu için geçerlidir.</p>
+
+      <div class="summary">
+        <ul>
+          <li>Hesap ya da üyelik yok.</li>
+          <li>Reklam, analitik, takip ve çökme raporu yok.</li>
+          <li>Yazıya döküm, çeviri ve seslendirme cihazında yapılır.</li>
+          <li>Ödemeyi Apple alır, kart bilgin bize ulaşmaz.</li>
+        </ul>
+      </div>
+
+      <section>
+        <h2>Dosyaların</h2>
+        <p>
+          Açtığın ya da kaydettiğin ses ve videolar, çıkan metin, çeviriler ve seslendirmeler cihazında üretilir ve
+          cihazında kalır. Bunları sunucularımıza göndermiyoruz, göremiyoruz ve saklamıyoruz.
+        </p>
+        <table class="table">
+          <thead>
+            <tr><th>Nerede</th><th>Projeler ve modeller nerede durur</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>iOS</td><td>Uygulamanın cihazdaki klasöründe. Uygulamayı silince onlar da silinir.</td></tr>
+            <tr><td>Web</td><td>Tarayıcının depolamasında (IndexedDB, önbellek). Site verilerini silince onlar da silinir.</td></tr>
+            <tr><td>MCP</td><td>Dosyalar bilgisayarında, modeller <code>~/.harfiyen-mcp</code> klasöründe.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>İnternete ne zaman bağlanır?</h2>
+        <p>Harfiyen yalnızca şu durumlarda internete bağlanır. Hiçbirinde dosyaların gönderilmez.</p>
+        <table class="table">
+          <thead>
+            <tr><th>Adres</th><th>Neden</th><th>Ne gider</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>cdn.harfiyen.dev<br />harfiyen.dev</td>
+              <td data-label="Neden">Modeller ilk kullanımda bir kez indirilir.</td>
+              <td data-label="Ne gider">Hangi modelin istendiği. Her web isteğinde olduğu gibi IP adresi ve tarayıcı bilgisi.</td>
+            </tr>
+            <tr>
+              <td>App Store</td>
+              <td data-label="Neden">Harfiyen Pro satın alma ve geri yükleme (iOS).</td>
+              <td data-label="Ne gider">Apple ile uygulama arasındaki satın alma bilgisi. Ödemeyi Apple işler.</td>
+            </tr>
+            <tr>
+              <td>api.github.com</td>
+              <td data-label="Neden">Web uygulamasında kaynak kodun yıldız sayısını göstermek.</td>
+              <td data-label="Ne gider">Kişisel bilgi içermeyen herkese açık bir istek.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          Siteler Cloudflare üzerinde çalışır. Cloudflare'e ulaşan IP adresi ve tarayıcı bilgisini seni tanımak için
+          kullanmıyoruz, kendi tarafımızda kayıt da tutmuyoruz. Satın almada Apple'ın verileri nasıl işlediği
+          <a href="https://www.apple.com/legal/privacy/">Apple Gizlilik Politikası</a>'nda anlatılır.
+        </p>
+      </section>
+
+      <section>
+        <h2>iOS izinleri</h2>
+        <p>Uygulama bir izni yalnızca o özelliği kullandığında ister. Ayarlar'dan istediğin zaman kapatabilirsin.</p>
+        <table class="table">
+          <tbody>
+            <tr><td>Mikrofon</td><td>Konuşurken canlı yazıya dökmek için. Ses cihazdan çıkmaz.</td></tr>
+            <tr><td>Kamera</td><td>Video çekerken canlı altyazı için. Görüntü cihazdan çıkmaz.</td></tr>
+            <tr><td>Fotoğraflar</td><td>Video seçmek ve altyazılı videoyu Fotoğraflar'a kaydetmek için.</td></tr>
+          </tbody>
+        </table>
+        <p>"Harfiyen ile aç" ya da paylaş menüsüyle gönderdiğin dosyalar da yalnızca uygulamanın cihazdaki klasörüne kopyalanır.</p>
+      </section>
+
+      <section>
+        <h2>Çocuklar</h2>
+        <p>Harfiyen kimseden kişisel veri toplamaz; 13 yaşından küçükler de buna dahildir.</p>
+      </section>
+
+      <section>
+        <h2>Haklar ve iletişim</h2>
+        <p>
+          Senin hakkında veri tutmadığımız için silinecek, düzeltilecek ya da dışa aktarılacak bir kayıt da yok. Bize
+          yazarsan e-postan yalnızca cevap vermek için kullanılır.
+        </p>
+        <p>
+          Sorular için <a href="mailto:support@harfiyen.dev">support@harfiyen.dev</a>. Harfiyen açık kaynaktır, ne
+          yaptığını <a href="https://github.com/ozcancelik/harfiyen">kaynak kodda</a> görebilirsin. Bu politika
+          değişirse yeni hâli bu sayfada, tarihiyle birlikte yayımlanır.
+        </p>
+      </section>
+    </main>
+
+    <!-- English -->
+    <main class="wrap" lang="en">
+      <h1>Privacy Policy</h1>
+      <p class="lead">Harfiyen collects no personal data. Your files are processed on your device and never uploaded.</p>
+      <p class="meta">Last updated: November 11, 2026 · Applies to the web app, the iOS app and the MCP server.</p>
+
+      <div class="summary">
+        <ul>
+          <li>No accounts or sign-up.</li>
+          <li>No ads, analytics, tracking or crash reporting.</li>
+          <li>Transcription, translation and text-to-speech run on your device.</li>
+          <li>Payments are handled by Apple; we never see your card details.</li>
+        </ul>
+      </div>
+
+      <section>
+        <h2>Your files</h2>
+        <p>
+          Audio and video you open or record, the resulting text, translations and voiceovers are created on your device
+          and stay there. We do not upload, see or store them.
+        </p>
+        <table class="table">
+          <thead>
+            <tr><th>Where</th><th>Where projects and models are kept</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>iOS</td><td>In the app's folder on your device. Deleting the app deletes them.</td></tr>
+            <tr><td>Web</td><td>In browser storage (IndexedDB, cache). Clearing site data deletes them.</td></tr>
+            <tr><td>MCP</td><td>Files on your computer, models in <code>~/.harfiyen-mcp</code>.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>When it goes online</h2>
+        <p>Harfiyen connects to the internet only in these cases. Your files are never sent.</p>
+        <table class="table">
+          <thead>
+            <tr><th>Host</th><th>Why</th><th>What is sent</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>cdn.harfiyen.dev<br />harfiyen.dev</td>
+              <td data-label="Why">Models are downloaded once, on first use.</td>
+              <td data-label="Sent">Which model is requested. As with any web request, IP address and user agent.</td>
+            </tr>
+            <tr>
+              <td>App Store</td>
+              <td data-label="Why">Buying and restoring Harfiyen Pro (iOS).</td>
+              <td data-label="Sent">Purchase status between Apple and the app. Apple processes the payment.</td>
+            </tr>
+            <tr>
+              <td>api.github.com</td>
+              <td data-label="Why">Showing the repository's star count in the web app.</td>
+              <td data-label="Sent">A public request with no personal information.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          The sites run on Cloudflare. We do not use the IP address and user agent Cloudflare receives to identify you,
+          and we keep no logs of our own. For purchases, see
+          <a href="https://www.apple.com/legal/privacy/">Apple's Privacy Policy</a>.
+        </p>
+      </section>
+
+      <section>
+        <h2>iOS permissions</h2>
+        <p>The app asks for a permission only when you use that feature. You can turn it off in Settings at any time.</p>
+        <table class="table">
+          <tbody>
+            <tr><td>Microphone</td><td>Live transcription while you speak. Audio stays on the device.</td></tr>
+            <tr><td>Camera</td><td>Live captions while recording video. Video stays on the device.</td></tr>
+            <tr><td>Photos</td><td>Picking videos and saving captioned videos to your library.</td></tr>
+          </tbody>
+        </table>
+        <p>Files sent with "Open in Harfiyen" or the share sheet are only copied into the app's folder on your device.</p>
+      </section>
+
+      <section>
+        <h2>Children</h2>
+        <p>Harfiyen collects no personal data from anyone, including children under 13.</p>
+      </section>
+
+      <section>
+        <h2>Your rights and contact</h2>
+        <p>
+          Since we hold no data about you, there is nothing to access, correct or delete. If you email us, your email is
+          used only to reply.
+        </p>
+        <p>
+          Questions: <a href="mailto:support@harfiyen.dev">support@harfiyen.dev</a>. Harfiyen is open source; you can
+          check what it does in the <a href="https://github.com/ozcancelik/harfiyen">source code</a>. Changes to this
+          policy are published on this page with a new date.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span class="fnote"><span lang="tr">Harfiyen, açık kaynak (MIT)</span><span lang="en">Harfiyen, open source (MIT)</span></span>
+        <a href="/"><span lang="tr">Uygulama</span><span lang="en">App</span></a>
+        <a href="/mcp">MCP</a>
+        <a href="/support"><span lang="tr">Destek</span><span lang="en">Support</span></a>
+        <a href="/privacy"><span lang="tr">Gizlilik</span><span lang="en">Privacy</span></a>
+        <a href="https://github.com/ozcancelik/harfiyen">GitHub</a>
+      </div>
+    </footer>
+  </body>
+</html>
