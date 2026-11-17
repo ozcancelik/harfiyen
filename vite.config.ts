@@ -65,11 +65,13 @@ export default defineConfig(({ mode }) => {
       const walk = (dir: string, rel = "") => {
         for (const entry of readdirSync(dir)) {
           if (entry === ".DS_Store" || entry === "_headers" || entry === "sw.js") continue;
+          // Files for the host and crawlers, not the app.
+          if (!rel && ["404.html", "robots.txt", "sitemap.xml"].includes(entry)) continue;
           const full = join(dir, entry);
           const path = rel ? `${rel}/${entry}` : entry;
           if (statSync(full).isDirectory()) {
-            // Site pages (/mcp, /support, /privacy) and their shared files (/site) are not part of the app: they stay off every user's precache.
-            if (["mcp", "support", "privacy", "site"].includes(path)) continue;
+            // Site pages (/mcp, /support, /privacy, /terms) and their shared files (/site) are not part of the app: they stay off every user's precache.
+            if (["mcp", "support", "privacy", "terms", "site"].includes(path)) continue;
             walk(full, path);
             continue;
           }
