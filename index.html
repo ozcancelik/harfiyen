@@ -66,7 +66,62 @@
     <title>Harfiyen: Videoyu tarayıcıda yazıya dök, çevir, seslendir</title>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Shown until the app mounts (React replaces it), and read by crawlers that do not run JavaScript. -->
+    <style>
+      .boot {
+        max-width: 560px;
+        margin: 0 auto;
+        padding: 12vh 24px 0;
+        font: 400 15px/1.6 "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: var(--text-2, #98a2ad);
+      }
+      .boot h1 {
+        margin: 0;
+        font-size: 24px;
+        line-height: 1.3;
+        color: var(--text, #e6ebf0);
+      }
+      .boot p,
+      .boot ul {
+        margin: 12px 0 0;
+      }
+      .boot ul {
+        padding-left: 18px;
+      }
+      .boot nav {
+        margin-top: 16px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        font-size: 14px;
+      }
+    </style>
+    <div id="root">
+      <main class="boot">
+        <h1>Harfiyen: videoyu tarayıcıda yazıya dök, çevir, seslendir</h1>
+        <p>
+          Harfiyen, Türkçe ve 30 dilde daha konuşmayı yazıya döker, altyazıyı istediğin stilde videonun içine yazar, metni
+          çevirir ve yapay sesle seslendirir. Ücretsizdir, hesap gerekmez. Video ve ses bilgisayarından çıkmaz; modeller
+          tarayıcında çalışır.
+        </p>
+        <ul>
+          <li>Videoya otomatik altyazı: on bir stil, dikey video (Reels, TikTok, Shorts) için kadraj, altyazılı MP4, SRT ve VTT.</li>
+          <li>Ses kaydını yazıya dökme: MP3, M4A, WAV ve videolardan zaman kodlu metin, canlı mikrofon.</li>
+          <li>Metinden kurgu, sessizlikleri ve "eee"leri kesme, kelime bip'leme, konuşmacı ayırma.</li>
+          <li>Çeviri ve Türkçe seslendirme.</li>
+        </ul>
+        <nav>
+          <a href="/videoya-altyazi-ekleme/">Videoya altyazı ekleme</a>
+          <a href="/reels-tiktok-altyazi/">Reels ve TikTok altyazı</a>
+          <a href="/video-cevirme-seslendirme/">Video çevirme ve seslendirme</a>
+          <a href="/ses-kaydini-yaziya-dokme/">Ses kaydını yazıya dökme</a>
+          <a href="/ses-desifre/">Ses deşifresi</a>
+          <a href="https://apps.apple.com/app/id6832223953">iPhone uygulaması</a>
+          <a href="/mcp/">MCP sunucusu</a>
+          <a href="/support/">Destek</a>
+        </nav>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
