@@ -261,10 +261,29 @@ section b {
   width: auto;
 }
 @media (max-width: 600px) {
-  .store {
+  .store:not(.store-main) {
     display: none;
   }
 }
+
+/* App Store screenshots in a row that scrolls sideways. */
+.gallery {
+  margin: 20px 0 0;
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 8px;
+}
+.gallery img {
+  flex: none;
+  width: 220px;
+  height: auto;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  scroll-snap-align: start;
+}
+
 
 /* A screenshot of the app. */
 .shot {

@@ -21,6 +21,7 @@
 
 <p align="center">
   <a href="https://harfiyen.dev"><strong>harfiyen.dev</strong></a> ·
+  <a href="https://harfiyen.dev/iphone/">iPhone</a> ·
   <a href="#hızlı-başlangıç">Hızlı başlangıç</a> ·
   <a href="#neler-yapabilir">Özellikler</a> ·
   <a href="#kullanım">Kullanım</a> ·
@@ -42,7 +43,8 @@ için [Mihu](https://huggingface.co/mihuai/turkish-stt-66m-v2), ekran kartı olm
 [Duyu-small](https://huggingface.co/KaanAydinli/Duyu-small) seçilebilir. Bir video ya da ses dosyası yüklersin,
 istersen kadrajını (örneğin dikey 9:16) ve kullanacağın bölümü seçip **Yazıya dök** dersin; kelimeler zaman
 kodlarıyla belirir, istediğin altyazı stilini seçersin ve altyazılı videoyu indirirsin. Mikrofonla konuşurken de
-canlı çalışır.
+canlı çalışır. iPhone'da aynısını [Harfiyen uygulaması](https://harfiyen.dev/iphone/) telefonun üzerinde yapar (bu
+repodan ayrı bir uygulama; temel özellikleri ücretsiz).
 
 ## Neler yapabilir
 

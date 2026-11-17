@@ -112,6 +112,34 @@ ${meta.faq.map((x) => `          <details>\n            <summary>${esc(x.q)}</su
       about: { "@type": "WebApplication", name: "Harfiyen", url: `${ORIGIN}/` },
     },
   ];
+  // "app": true makes the page about the iPhone app: the App Store badge leads (also on phones) and the page
+  // describes the app as a MobileApplication.
+  const badge = (cls) =>
+    `<a class="${cls}" href="${APP_STORE}"><img src="/site/app-store-tr.svg" width="151" height="40" alt="App Store'dan İndirin" /></a>`;
+  const actions = meta.app
+    ? `      <div class="actions">
+        ${badge("store store-main")}
+        <a class="btn" href="/">Bilgisayarda tarayıcıda dene</a>
+      </div>
+      <p class="meta">${meta.app.note}</p>`
+    : `      <div class="actions">
+        <a class="btn primary" href="/">Tarayıcıda ücretsiz aç</a>
+        ${badge("store")}
+      </div>
+      <p class="meta">Kayıt yok. Dosyan yüklenmez, cihazında işlenir.</p>`;
+  if (meta.app) {
+    ld.push({
+      "@type": "MobileApplication",
+      name: meta.app.name,
+      url: APP_STORE,
+      installUrl: APP_STORE,
+      operatingSystem: meta.app.os,
+      applicationCategory: "MultimediaApplication",
+      inLanguage: ["tr", "en"],
+      image: `${ORIGIN}/icon-512.png`,
+      offers: { "@type": "Offer", price: "0", priceCurrency: "TRY" },
+    });
+  }
   if (meta.faq?.length) {
     ld.push({
       "@type": "FAQPage",
@@ -163,11 +191,7 @@ ${meta.faq.map((x) => `          <details>\n            <summary>${esc(x.q)}</su
     <main class="wrap">
       <h1>${esc(meta.h1)}</h1>
       <p class="lead">${meta.lead}</p>
-      <div class="actions">
-        <a class="btn primary" href="/">Tarayıcıda ücretsiz aç</a>
-        <a class="store" href="${APP_STORE}"><img src="/site/app-store-tr.svg" width="151" height="40" alt="App Store'dan İndirin" /></a>
-      </div>
-      <p class="meta">Kayıt yok. Dosyan yüklenmez, cihazında işlenir.</p>
+${actions}
       ${hero}
 
 ${content}
