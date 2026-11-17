@@ -1,0 +1,62 @@
+<!--
+{
+  "nav": "Ses deşifresi",
+  "title": "Ses Deşifresi: Röportaj ve Görüşme Kaydı Deşifre Etme · Harfiyen",
+  "description": "Röportaj, görüşme ve odak grubu kayıtlarını deşifre et: konuşmacıları ayırır, zaman kodlu metin verir. Kayıt bilgisayarından çıkmaz. Ücretsiz, kayıt gerektirmez.",
+  "h1": "Ses deşifresi: röportaj ve görüşme kayıtlarını yazıya dökme",
+  "lead": "Saatlerce dinleyip yazmak yerine kaydı Harfiyen'e ver: konuşmayı yazıya döker, kimin konuştuğunu ayırır, her kelimeye zaman kodu koyar. Sana kalan dinleyerek kontrol etmek. Kayıt bir sunucuya gitmez.",
+  "shot": { "file": "uygulama.jpg", "alt": "Harfiyen'de deşifre: solda zaman kodlu transkript, ortada oynatıcı" },
+  "faq": [
+    { "q": "Deşifre ne kadar doğru olur?", "a": "Kaydın kalitesine bağlıdır. Yakın mikrofonla, sessiz ortamda yapılmış görüşmelerde metnin büyük kısmı doğru çıkar; kalabalık ortam, uzak mikrofon ve üst üste konuşma hatayı artırır. Akademik ya da hukuki kullanımda metni mutlaka kaydı dinleyerek kontrol et." },
+    { "q": "Kayıtlar gizli kalıyor mu?", "a": "Kayıt ve metin yalnızca bilgisayarında işlenir ve saklanır; Harfiyen'in bir sunucusu kaydı almaz. Katılımcıların kaydının üçüncü bir tarafa aktarılmaması gereken çalışmalarda bu, veri koruma değerlendirmesini kolaylaştırır." },
+    { "q": "Konuşmacıları kendisi ayırıyor mu?", "a": "Evet. Konuşmacıları ayır, kimin ne zaman konuştuğunu sesten bulur. Kaç kişi konuştuğunu söylersen sonuç iyileşir. Yanlış atanan satırı tek tıkla doğru kişiye verebilir, iki konuşmacıyı birleştirebilirsin." },
+    { "q": "Deşifre metnini nasıl alırım?", "a": "Düz metin olarak indir ya da kopyala; konuşmacı adları satır başlarında yazılır. Word veya Google Docs'a yapıştırıp düzenleyebilirsin. Zaman kodlarını korumak için SRT ya da JSON da alabilirsin." },
+    { "q": "Yabancı dilde yapılmış görüşmeleri deşifre edebilir miyim?", "a": "Evet. Whisper modeliyle 31 dilde yazıya döker; metni ayrıca Türkçeye çevirebilirsin." }
+  ]
+}
+-->
+      <section>
+        <h2>Deşifre nasıl yapılır</h2>
+        <ol>
+          <li><b>Kaydı aç.</b> <a href="/">harfiyen.dev</a>'e ses ya da video kaydını sürükle. Doğruluk önemliyse modeli <b>Whisper Turbo</b>'ya geçir.</li>
+          <li><b>Yazıya dök.</b> Uzun kayıtlarda döküm durdurulup sonra kaldığı yerden sürdürülebilir.</li>
+          <li><b>Konuşmacıları ayır.</b> <b>Metin</b> sekmesinde <b>Konuşmacıları ayır</b>'a bas. "Konuşmacı 1", "Konuşmacı 2" adlarını gerçek adlarla değiştir.</li>
+          <li><b>Dinleyerek kontrol et.</b> Bir kelimeye tıklayınca kayıt o ana atlar, çalarken konuşulan kelime vurgulanır. Yanlışları çift tıklayıp düzelt.</li>
+          <li><b>Metni al.</b> Konuşmacı adlarıyla düz metin olarak indir ya da kopyala.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Kimler için</h2>
+        <ul>
+          <li><b>Gazeteciler:</b> röportaj ve muhabir notları; alıntıyı zaman koduyla bulup kayıttan doğrulamak için.</li>
+          <li><b>Akademisyenler ve öğrenciler:</b> nitel araştırmada derinlemesine görüşme ve odak grubu deşifresi.</li>
+          <li><b>İK ve araştırma ekipleri:</b> kullanıcı görüşmeleri, mülakatlar, toplantı tutanakları.</li>
+          <li><b>Podcast üreticileri:</b> bölüm metni ve konuşmacı bazında alıntılar.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Kayıt neden bilgisayarından çıkmamalı</h2>
+        <p>
+          Görüşme kayıtları çoğu zaman kişisel veri içerir ve katılımcıya "kaydınız yalnızca araştırmacıda kalacak"
+          sözü verilir. Bulut tabanlı deşifre servisleri kaydı kendi sunucularına yükler. Harfiyen'de konuşma
+          tanıma modelleri tarayıcında çalışır: kayıt da metin de bilgisayarında kalır, internet yalnızca modelleri
+          bir kez indirmek için kullanılır. Modeller indikten sonra internet olmadan da çalışır.
+        </p>
+      </section>
+
+      <section>
+        <h2>Deşifreyi hızlandıran araçlar</h2>
+        <ul>
+          <li><b>Kelime düzeyinde zaman:</b> metindeki her kelime kayıttaki anına bağlıdır.</li>
+          <li><b>Bul ve değiştir:</b> yanlış duyulan bir ismi ya da terimi bütün metinde tek seferde düzelt.</li>
+          <li><b>Bölüm seçme:</b> iki saatlik kayıttan yalnızca ihtiyacın olan kısmı dök.</li>
+          <li><b>Otomatik kayıt:</b> düzeltmelerin tarayıcıda saklanır; sayfayı kapatsan da kaldığın yerden devam edersin.</li>
+          <li><b>Metni sese hizala:</b> elinde kısmi bir metin varsa yapıştır, zamanları kayıttan alsın.</li>
+        </ul>
+        <p>
+          Kısa kayıtlar ve genel yazıya döküm için <a href="/ses-kaydini-yaziya-dokme/">ses kaydını yazıya dökme</a>,
+          videoya altyazı için <a href="/videoya-altyazi-ekleme/">videoya altyazı ekleme</a> sayfasına bak.
+        </p>
+      </section>

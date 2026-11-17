@@ -1,4 +1,4 @@
-/* Shared styles for the site pages (/mcp, /support, /privacy). The app has its own (src/styles.css). */
+/* Shared styles for the site pages (/mcp, /support, /privacy, /terms and the pages from content/pages). The app has its own (src/styles.css). */
 
 @font-face {
   font-family: "Inter Variable";
@@ -248,6 +248,34 @@ section b {
 }
 .btn.primary:hover {
   background: var(--cini-press);
+}
+
+/* Apple's App Store badge, used as is. Hidden on phones: Safari on iPhone shows its own App Store banner. */
+.store {
+  display: inline-flex;
+  align-items: center;
+}
+.store img {
+  display: block;
+  height: 40px;
+  width: auto;
+}
+@media (max-width: 600px) {
+  .store {
+    display: none;
+  }
+}
+
+/* A screenshot of the app. */
+.shot {
+  margin: 28px 0 0;
+}
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
 }
 
 /* Questions that open on tap. */

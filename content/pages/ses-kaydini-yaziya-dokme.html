@@ -1,0 +1,67 @@
+<!--
+{
+  "nav": "Ses kaydını yazıya dökme",
+  "title": "Ses Kaydını Yazıya Dökme: Ücretsiz Sesi Metne Çevirme · Harfiyen",
+  "description": "Ses kaydını ve videoyu yazıya dök: MP3, M4A, WAV ve videolardan zaman kodlu metin. Türkçe için özel modeller, 31 dil, canlı mikrofon. Ücretsiz; kaydın yüklenmez.",
+  "h1": "Ses kaydını yazıya dökme",
+  "lead": "Ses kaydını ya da videoyu aç, Harfiyen konuşmayı noktalamasıyla birlikte metne çevirsin. Kelimeye tıklayınca kayıt o ana atlar; düzeltmek kolaydır. Kayıt bilgisayarından çıkmaz.",
+  "shot": { "file": "uygulama.jpg", "alt": "Harfiyen'de yazıya döküm: solda zaman kodlu transkript, ortada oynatıcı" },
+  "faq": [
+    { "q": "Sesi metne çevirmek ücretsiz mi?", "a": "Evet. harfiyen.dev'de ücretsiz yazıya dökebilirsin, hesap açman gerekmez." },
+    { "q": "Ses kaydım bir sunucuya gidiyor mu?", "a": "Hayır. Konuşma tanıma modeli tarayıcında, kendi bilgisayarında çalışır. Bu yüzden özel görüşmeler, dersler ve toplantılar için de güvenle kullanılabilir." },
+    { "q": "Hangi dosyaları yazıya dökebilirim?", "a": "MP3, M4A, WAV, FLAC, OGG, OPUS ve AAC ses dosyaları ile MP4, MOV, MKV ve WebM videolar. WhatsApp sesli mesajları (OPUS) ve iPhone ses kayıtları (M4A) doğrudan açılır." },
+    { "q": "Uzun kayıtlarda çalışır mı?", "a": "Evet. Uzun dosyalar parça parça işlenir, bellek şişmez. Döküm durdurulabilir ve daha sonra kaldığı yerden devam eder; yalnızca bir bölüm seçersen sadece o kısım dökülür." },
+    { "q": "Metni Word'e nasıl aktarırım?", "a": "Düz metin olarak indir ya da panoya kopyalayıp Word veya Google Docs'a yapıştır. Altyazı için SRT ve VTT, kelime zamanlarıyla birlikte JSON da alabilirsin." },
+    { "q": "Türkçe dışındaki dillerde çalışır mı?", "a": "Whisper modeliyle İngilizce, Almanca, Fransızca, İspanyolca, Rusça ve toplam 31 dilde yazıya döker. Metni ayrıca Türkçeye ya da başka bir dile çevirebilirsin." }
+  ]
+}
+-->
+      <section>
+        <h2>Sesi metne 3 adımda çevir</h2>
+        <ol>
+          <li><b>Kaydı aç.</b> <a href="/">harfiyen.dev</a>'i aç, ses ya da video dosyasını sayfaya sürükle. Konuşma dilini menüden seç (varsayılan Türkçe).</li>
+          <li><b>Yazıya dök.</b> <b>Yazıya dök</b>'e bas. Metin ilerledikçe belirir; noktalama ve büyük harfler döküm bitince eklenir.</li>
+          <li><b>Düzelt ve indir.</b> Kelimeye tıklayıp o anı dinle, satıra çift tıklayıp düzelt. Düz metin, SRT, VTT ya da JSON olarak indir.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Hangi kayıtlar için?</h2>
+        <ul>
+          <li><b>Ders ve seminer kayıtları:</b> not çıkarmak ve tekrar etmek için.</li>
+          <li><b>Toplantılar:</b> Zoom, Meet ya da Teams kaydından tutanak.</li>
+          <li><b>Sesli mesajlar ve sesli notlar:</b> dinlemek yerine okumak için.</li>
+          <li><b>Podcast ve YouTube videoları:</b> bölüm metni, açıklama ve alıntı için.</li>
+          <li><b>Röportajlar:</b> konuşmacıları ayırarak deşifre için; ayrıntısı <a href="/ses-desifre/">ses deşifresi</a> sayfasında.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Canlı mikrofonla yazıya dökme</h2>
+        <p>
+          Dosya yerine mikrofonla konuşursan kelimeler konuştuktan yaklaşık bir saniye sonra ekrana gelir, kayıt da
+          aynı anda saklanır. Dikte, sesli not ya da canlı altyazı için kullanabilirsin.
+        </p>
+      </section>
+
+      <section>
+        <h2>Doğruluk ve model seçimi</h2>
+        <p>
+          Varsayılan model <b>Seda</b> Türkçe için eğitilmiş, küçük ve hızlı bir modeldir. Daha az hata istersen
+          <b>Whisper Turbo</b>'yu seç; noktalamayı, büyük harfleri ve rakamları kendisi yazar, ama daha büyüktür ve ekran
+          kartı ister. Ekran kartı olmayan bilgisayarlarda <b>Duyu</b> işlemcide çalışır.
+        </p>
+        <p>
+          Hiçbir model hatasız değildir; gürültülü ya da üst üste konuşulan kayıtlarda hata artar. Yanlış duyulmuş
+          bir ismi <b>Bul ve değiştir</b> (Ctrl+F) ile bütün metinde tek seferde düzeltebilirsin.
+        </p>
+      </section>
+
+      <section>
+        <h2>Türkçe yazım kurallarına uygun</h2>
+        <p>
+          Cümle başları ve özel adlar büyük harfle, özel adların ekleri kesme işaretiyle yazılır ("Ankara'ya",
+          "TBMM'de"). Sayılar istersen Türkçe yazım kuralına göre (1–9 yazıyla, 10 ve üstü rakamla), istersen hepsi
+          rakamla yazılır; tarih ve saatler doğru biçimde çıkar.
+        </p>
+      </section>
